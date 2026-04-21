@@ -28,6 +28,8 @@ if (-not (Test-Path $BacklogDir)) {
     New-Item -ItemType Directory -Path $BacklogDir -Force | Out-Null
 }
 if ($Content) {
-    Add-Content -Path $FilePath -Value "$Content`n" -Encoding UTF8
+    $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $AppendContent = "`n----`n$Timestamp`n$Content"
+    Add-Content -Path $FilePath -Value $AppendContent -Encoding UTF8
 }
 Get-Content $FilePath

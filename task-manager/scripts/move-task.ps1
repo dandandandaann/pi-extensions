@@ -22,9 +22,9 @@ if (-not $OldPath) {
     Write-Error "Task '$Name' not found"
     exit 1
 }
-if ($NewFolder -and $NewFolder -eq $Found) {
-    Write-Output "Task already in $NewFolder"
-    exit 0
+if ($NewFolder -eq "Closed") {
+    Write-Error "Use /task-complete to move tasks to Closed"
+    exit 1
 }
 $NewDir = "$TasksRoot/$NewFolder"
 if (-not (Test-Path $NewDir)) {

@@ -620,6 +620,80 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
+
+    // Register /task-work command - assign task and instruct agent to work on it
+    pi.registerCommand("task-work", {
+        description: "Assign a task to Active and instruct agent to work on it (use /task-work <name>)",
+        async handler(args, ctx) {
+            const workspace = getWorkspaceName(ctx.cwd);
+            
+            // If no args, check if there's exactly one active task
+            if (!args) {
+                const activeTasks = await listTasks(workspace, "Active");
+                if (activeTasks.length === 0) {
+                    ctx.ui.notify("No active task. Use /task-work <task-name>", "info");
+                    return;
+                }
+                if (activeTasks.length === 1) {
+                    // Use the single active task
+                    await assignTaskToAgent(workspace, activeTasks[0].title, ctx);
+                    return;
+                }
+                ctx.ui.notify(`Multiple active tasks. Use /task-work <task-name>`, "info");
+                return;
+            }
+
+            const matches = await findAllMatching(workspace, args);
+            const exactMatch = matches.find(m => 
+                m.title.toLowerCase() === args.toLowerCase() ||
+                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
+            );
+            
+            if (exactMatch) {
+                await assignTaskToAgent(workspace, exactMatch.title, ctx);
+                return;
+            }
+            
+            if (matches.length === 0) {
+                ctx.ui.notify(`No task found matching "${args}"`, "error");
+                return;
+            }
+            
+            const items: { value: string; label: string }[] = matches.map(task => ({
+                value: task.title,
+                label: `[${task.folder}] ${task.title}`
+            }));
+
+            const choice = await ctx.ui.select(`${matches.length} tasks matching "${args}":`, items.map(i => i.label));
+            if (!choice) {
+                ctx.ui.notify("Cancelled", "info");
+                return;
+            }
+
+            const selected = items.find((_, i) => items[i].label === choice);
+            if (selected) {
+                await assignTaskToAgent(workspace, selected.value, ctx);
+            }
+        }
+    });
+
+    // Helper to assign task and send to agent
+    async function assignTaskToAgent(workspace: string, title: string, ctx: any) {
+        const activeTasks = await listTasks(workspace, "Active");
+        if (activeTasks.length > 0) {
+            await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
+        }
+        await runScript("move-task", workspace, { Name: title, NewFolder: "Active" });
+        
+        const content = await getTaskContent(workspace, title);
+        if (content) {
+            // Send task content as a user message to trigger the agent
+            pi.sendUserMessage(`Work on the following task:\n\n${content}\n\n---\n\nWhen finished, use \`/submit-qa <commit message>\` to submit to QA.`, { deliverAs: "steer" });
+        }
+        
+        ctx.ui.notify(`Now working on: "${title}"`, "info");
+    }
+
     // Register /task-complete command - mark task as completed
     pi.registerCommand("task-complete", {
         description: "Mark a task as complete (use /task-complete <name>)",
@@ -686,6 +760,32 @@ export default function (pi: ExtensionAPI) {
                 await runScript("append-task", workspace, { Name: title, Content: qaNote });
                 
                 ctx.ui.notify(`Moved "${title}" to Closed`, "info");
+            }
+        },
+    });
+
+    // Register /submit-qa command - submit active task to QA
+    pi.registerCommand("submit-qa", {
+        description: "Submit active task to QA (use /submit-qa <context/commit message>)",
+        async handler(args, ctx) {
+            const workspace = getWorkspaceName(ctx.cwd);
+            if (!args) {
+                ctx.ui.notify("Usage: /submit-qa <context explaining changes>", "info");
+                return;
+            }
+
+            const activeTasks = await listTasks(workspace, "Active");
+            if (activeTasks.length === 0) {
+                ctx.ui.notify("No active task to submit", "error");
+                return;
+            }
+
+            const title = activeTasks[0].title;
+            try {
+                await runScript("submit-to-qa", workspace, { Name: title, Context: args });
+                ctx.ui.notify(`Submitted "${title}" to QA`, "info");
+            } catch (error) {
+                ctx.ui.notify(`Error: ${error instanceof Error ? error.message : String(error)}`, "error");
             }
         },
     });
