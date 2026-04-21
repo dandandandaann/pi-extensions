@@ -19,6 +19,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import path from "node:path";
 import os from "node:os";
 
+const VERSION = "0.1.3";
+
 interface WorkspaceSandboxConfig {
   allowedDirs?: string[];
   skipDangerousCheck?: boolean;
@@ -94,17 +96,32 @@ export default function (pi: ExtensionAPI) {
     return drive1.toLowerCase() === drive2.toLowerCase();
   }
 
-  function resolveTargetPath(targetPath: string, workspace: string): string {
-    // Resolve relative paths against the workspace
-    if (!path.isAbsolute(targetPath)) {
-      return path.resolve(workspace, targetPath);
+  function normalizeGitBashPath(p: string): string {
+    // Convert Git Bash style paths (/c/...) to Windows paths (C:/...)
+    const match = p.match(/^\/([a-zA-Z])(\/|$)/);
+    if (match) {
+      return `${match[1].toUpperCase()}:${p.slice(2)}`;
     }
-    return targetPath;
+    return p;
+  }
+
+  function resolveTargetPath(targetPath: string, workspace: string): string {
+    // Normalize Git Bash style paths first
+    const normalized = normalizeGitBashPath(targetPath);
+    
+    // Resolve relative paths against the workspace
+    if (!path.isAbsolute(normalized)) {
+      return path.resolve(workspace, normalized);
+    }
+    return normalized;
   }
 
   function isPathOutsideWorkspace(targetPath: string, workspace: string): boolean {
-    // Resolve relative paths against the workspace
-    const resolved = resolveHome(path.normalize(resolveTargetPath(targetPath, workspace)));
+    // Normalize Git Bash style paths first
+    const normalizedTarget = normalizeGitBashPath(targetPath);
+    
+    // Resolve relative paths and expand ~ against the workspace
+    const resolved = resolveHome(path.normalize(resolveTargetPath(normalizedTarget, workspace)));
     const workspaceResolved = resolveHome(path.normalize(workspace));
 
     // Normalize path separators for comparison
@@ -218,7 +235,7 @@ export default function (pi: ExtensionAPI) {
       
       if (!cmd || cmd === "status") {
         const status = allowAllUntilInput ? "🟢 Allow All active" : "🔒 Sandbox active";
-        ctx.ui.notify(`${status} - ${config.dangerousPatterns.length} dangerous patterns`, "info");
+        ctx.ui.notify(`${status} [v${VERSION}] - ${config.dangerousPatterns.length} dangerous patterns`, "info");
         return;
       }
       
