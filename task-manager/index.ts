@@ -758,9 +758,51 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
-    // Register /task-new command - create a new task
+    // Register /task-create command - create a new task (alias for /task-new)
+    pi.registerCommand("task-create", {
+        description: "Create a new task (use /task-create [-o] <title> [--priority=high])",
+        async handler(args, ctx) {
+            const workspace = getWorkspaceName(ctx.cwd);
+            if (!args) {
+                ctx.ui.notify("Usage: /task-create [-o] <title> [--priority=low|medium|high|critical]", "info");
+                return;
+            }
+
+            // Parse -o flag (must be at start, standalone)
+            let openTask = false;
+            let remaining = args;
+            if (args.match(/^-o\s/)) {
+                openTask = true;
+                remaining = args.replace(/^-o\s/, "");
+            }
+
+            // Parse priority from args if present
+            let title = remaining;
+            let priority = "medium";
+            const priorityMatch = remaining.match(/--priority=(\w+)/);
+            if (priorityMatch) {
+                priority = priorityMatch[1];
+                title = remaining.replace(/--priority=\w+\s*/, "");
+            }
+
+            const id = await runScript("create-task", workspace, { Title: title, Priority: priority });
+            ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "info");
+
+            // Open task after creation if -o flag was set
+            if (openTask) {
+                const filePath = await findTaskPath(workspace, title);
+                if (filePath) {
+                    await openTaskFileInEditor(filePath, title, ctx);
+                } else {
+                    ctx.ui.notify(`Could not find task file for "${title}"`, "error");
+                }
+            }
+        },
+    });
+
+    // Register /task-new command - create a new task (kept for backward compatibility)
     pi.registerCommand("task-new", {
-        description: "Create a new task (use /task-new [-o] <title> [--priority=high])",
+        description: "Create a new task (use /task-new [-o] <title> [--priority=high]) - Alias: /task-create",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             if (!args) {

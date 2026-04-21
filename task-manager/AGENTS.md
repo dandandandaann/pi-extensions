@@ -82,20 +82,21 @@ tasks(action="search", name="auth")
 |---------|-------------|
 | `/tasks` | List all tasks with interactive picker |
 | `/task <name>` | Assign task to Active (auto-switches) |
-| `/task-new <title> [--priority=high]` | Create new task in Backlog |
+| `/task-create <title> [--priority=high]` | Create new task in Backlog |
+| `/task-new <title> [--priority=high]` | Create new task in Backlog (alias) |
 | `/task-open <name>` | Open task file in default editor |
-| `/task-complete <name>` | Mark task as complete (moves to user-qa) |
+| `/task-complete [name]` | Mark task as complete (lists tasks if no name given) |
 
 ### Command Examples
 
 ```bash
 # Create a high-priority task
-/task-new Implement authentication --priority=high
+/task-create Implement authentication --priority=high
 
 # Assign existing task to active
 /task design-auth
 
-# Mark task as complete (moves to user-qa)
+# Mark task as complete (lists non-closed tasks if no name)
 /task-complete design-auth
 
 # View all tasks
