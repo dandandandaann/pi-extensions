@@ -17,7 +17,8 @@ Tasks are organized by workspace (derived from cwd):
 ├── C-repo/           # Workspace: C:/repo
 │   ├── Backlog/      # Pending tasks
 │   ├── Active/       # Currently working on (single task)
-│   └── Closed/      # Completed tasks
+│   ├── user-qa/      # Completed tasks pending user QA
+│   └── Closed/       # Tasks finished with user QA
 └── Another-Workspace/
 ```
 
@@ -75,16 +76,20 @@ tasks(action="search", name="auth")
 |---------|-------------|
 | `/tasks` | List all tasks with interactive picker |
 | `/task <name>` | Assign task to Active (auto-switches) |
-| `/newtask <title> [--priority=high]` | Create new task in Backlog |
+| `/task-new <title> [--priority=high]` | Create new task in Backlog |
+| `/task-complete <name>` | Mark task as complete (moves to user-qa) |
 
 ### Command Examples
 
 ```bash
 # Create a high-priority task
-/newtask Implement authentication --priority=high
+/task-new Implement authentication --priority=high
 
 # Assign existing task to active
 /task design-auth
+
+# Mark task as complete (moves to user-qa)
+/task-complete design-auth
 
 # View all tasks
 /tasks
@@ -96,7 +101,7 @@ tasks(action="search", name="auth")
 
 - Use `tasks(action="list")` to see all tasks
 - Use `tasks(action="append", ...)` to record progress
-- Use `/newtask` to create tasks for new work
+- Use `/task-new` to create tasks for new work
 - Check Active task at session start
 
 ### Don't: Access Tasks Folder Directly
@@ -104,7 +109,7 @@ tasks(action="search", name="auth")
 The extension **blocks direct access** to `~/.pi/tasks/` via write/edit/bash tools. All task operations must go through:
 
 1. The `tasks` tool
-2. The `/task`, `/tasks`, `/newtask` commands
+2. The `/task`, `/tasks`, `/task-new`, `/task-complete` commands
 3. Direct PowerShell scripts (for advanced use)
 
 ### Active Task Policy

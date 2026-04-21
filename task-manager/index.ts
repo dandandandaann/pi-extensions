@@ -15,6 +15,7 @@ import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { Text } from "@mariozechner/pi-tui";
 
+const VERSION = "0.1.3";
 const execAsync = promisify(exec);
 const TASKS_ROOT = resolve(process.env.HOME || process.env.USERPROFILE || "", ".pi", "tasks");
 
@@ -86,7 +87,7 @@ async function listTasks(workspace: string, folder: string): Promise<TaskInfo[]>
  * Get all tasks across folders for a workspace
  */
 async function getAllTasks(workspace: string): Promise<ListResult[]> {
-    return Promise.all(["Backlog", "Active", "Closed"].map(async folder => ({
+    return Promise.all(["Backlog", "Active", "user-qa", "Closed"].map(async folder => ({
         folder,
         tasks: await listTasks(workspace, folder)
     })));
@@ -97,7 +98,7 @@ async function getAllTasks(workspace: string): Promise<ListResult[]> {
  */
 async function getTaskContent(workspace: string, name: string): Promise<string | null> {
     // Build list of folders to search
-    for (const folder of ["Backlog", "Active", "Closed"]) {
+    for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
         const folderPath = resolve(TASKS_ROOT, workspace, folder);
         
         // List files in the folder
@@ -534,7 +535,7 @@ export default function (pi: ExtensionAPI) {
             }
             
             if (matches.length === 0) {
-                ctx.ui.notify(`No task found matching "${args}". Use /newtask to create one.`, "error");
+                ctx.ui.notify(`No task found matching "${args}". Use /task-new to create one.`, "error");
                 return;
             }
             
@@ -568,13 +569,13 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
-    // Register /newtask command - create a new task
-    pi.registerCommand("newtask", {
-        description: "Create a new task (use /newtask <title> [--priority=high])",
+    // Register /task-new command - create a new task
+    pi.registerCommand("task-new", {
+        description: "Create a new task (use /task-new <title> [--priority=high])",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             if (!args) {
-                ctx.ui.notify("Usage: /newtask <title> [--priority=low|medium|high|critical]", "info");
+                ctx.ui.notify("Usage: /task-new <title> [--priority=low|medium|high|critical]", "info");
                 return;
             }
 
@@ -589,6 +590,76 @@ export default function (pi: ExtensionAPI) {
 
             const id = await runScript("create-task", workspace, { Title: title, Priority: priority });
             ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "success");
+        },
+    });
+
+    // Register /task-complete command - mark task as completed by user QA
+    pi.registerCommand("task-complete", {
+        description: "Mark a task as complete (use /task-complete <name>)",
+        async handler(args, ctx) {
+            const workspace = getWorkspaceName(ctx.cwd);
+            if (!args) {
+                ctx.ui.notify("Usage: /task-complete <task-name>", "info");
+                return;
+            }
+
+            // Find tasks matching the input
+            const matches = await findAllMatching(workspace, args);
+            
+            // Check for exact match
+            const exactMatch = matches.find(m => 
+                m.title.toLowerCase() === args.toLowerCase() ||
+                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
+            );
+            
+            if (exactMatch) {
+                // Exact match found - process directly
+                const title = exactMatch.title;
+                
+                // Move to user-qa folder
+                await runScript("move-task", workspace, { Name: title, NewFolder: "user-qa" });
+                
+                // Append completion note
+                const qaNote = `\n## User QA\nTask has finished user QA testing.`;
+                await runScript("append-task", workspace, { Name: title, Content: qaNote });
+                
+                ctx.ui.notify(`Moved "${title}" to user-qa`, "success");
+                return;
+            }
+            
+            if (matches.length === 0) {
+                ctx.ui.notify(`No task found matching "${args}"`, "error");
+                return;
+            }
+            
+            // No exact match - show disambiguation list
+            const items: { value: string; label: string }[] = [];
+            for (const task of matches) {
+                items.push({
+                    value: task.title,
+                    label: `[${task.folder}] ${task.title}`
+                });
+            }
+
+            const choice = await ctx.ui.select(`${matches.length} tasks matching "${args}":`, items.map(i => i.label));
+            if (!choice) {
+                ctx.ui.notify("Cancelled", "info");
+                return;
+            }
+
+            const selected = items.find((_, i) => items[i].label === choice);
+            if (selected) {
+                const title = selected.value;
+                
+                // Move to user-qa folder
+                await runScript("move-task", workspace, { Name: title, NewFolder: "user-qa" });
+                
+                // Append completion note
+                const qaNote = `\n## User QA\nTask has finished user QA testing.`;
+                await runScript("append-task", workspace, { Name: title, Content: qaNote });
+                
+                ctx.ui.notify(`Moved "${title}" to user-qa`, "success");
+            }
         },
     });
 }

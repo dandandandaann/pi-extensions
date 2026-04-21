@@ -497,7 +497,7 @@ function default_1(pi) {
                 return;
             }
             if (matches.length === 0) {
-                ctx.ui.notify(`No task found matching "${args}". Use /newtask to create one.`, "error");
+                ctx.ui.notify(`No task found matching "${args}". Use /task-new to create one.`, "error");
                 return;
             }
             // No exact match - show disambiguation list
@@ -526,13 +526,13 @@ function default_1(pi) {
             }
         },
     });
-    // Register /newtask command - create a new task
-    pi.registerCommand("newtask", {
-        description: "Create a new task (use /newtask <title> [--priority=high])",
+    // Register /task-new command - create a new task
+    pi.registerCommand("task-new", {
+        description: "Create a new task (use /task-new <title> [--priority=high])",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             if (!args) {
-                ctx.ui.notify("Usage: /newtask <title> [--priority=low|medium|high|critical]", "info");
+                ctx.ui.notify("Usage: /task-new <title> [--priority=low|medium|high|critical]", "info");
                 return;
             }
             // Parse priority from args if present

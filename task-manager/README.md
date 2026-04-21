@@ -11,10 +11,12 @@ Tasks are separated by workspace/folder. Tasks for `C:/temp` go to:
 ├── C-temp/           # Workspace: C:/temp
 │   ├── Backlog/      # Pending tasks
 │   ├── Active/       # Currently working on (single task)
+│   ├── user-qa/
 │   └── Closed/       # Completed tasks
 ├── Another-Workspace/
 │   ├── Backlog/
 │   ├── Active/
+│   ├── user-qa/
 │   └── Closed/
 └── ...
 ```
@@ -44,7 +46,8 @@ tags:
 |---------|-------------|
 | `/tasks` | List all tasks by folder |
 | `/task <name>` | Assign a task to Active |
-| `/newtask <title> [--priority=high]` | Create new task in Backlog |
+| `/task-new <title> [--priority=high]` | Create new task in Backlog |
+| `/task-complete <name>` | Mark task as complete (moves to user-qa) |
 
 ## Tools (for LLM)
 
@@ -62,10 +65,13 @@ tags:
 
 ```bash
 # Create a task
-/newtask Design authentication flow --priority=high
+/task-new Design authentication flow --priority=high
 
 # List all tasks
 /tasks
+
+# Mark task as complete (moves to user-qa)
+/task-complete design-auth
 
 # Assign a task
 /task design-auth
