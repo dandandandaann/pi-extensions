@@ -879,9 +879,36 @@ export default function (pi: ExtensionAPI) {
         description: "Mark a task as complete (use /task-complete <name>)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
+            
+            // If no args, list all non-closed tasks for selection
             if (!args) {
-                ctx.ui.notify("Usage: /task-complete <task-name>", "info");
-                return;
+                const openTasks = await getOpenTasks(workspace);
+                const items: { value: string; label: string }[] = [];
+                
+                for (const result of openTasks) {
+                    for (const task of result.tasks) {
+                        items.push({
+                            value: task.title,
+                            label: `[${result.folder}] ${task.title}`
+                        });
+                    }
+                }
+                
+                if (items.length === 0) {
+                    ctx.ui.notify("No tasks found", "info");
+                    return;
+                }
+                
+                const choice = await ctx.ui.select("Select a task to complete:", items.map(i => i.label));
+                if (!choice) {
+                    ctx.ui.notify("Cancelled", "info");
+                    return;
+                }
+                
+                const selected = items.find((_, i) => items[i].label === choice);
+                if (selected) {
+                    args = selected.value;
+                }
             }
 
             // Find tasks matching the input
