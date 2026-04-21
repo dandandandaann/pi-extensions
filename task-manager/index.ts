@@ -66,6 +66,7 @@ interface ListResult {
 const TasksParamsSchema = Type.Object({
     action: Type.Union([
         Type.Literal("list"),
+        Type.Literal("create"),
         Type.Literal("move"),
         Type.Literal("append"),
         Type.Literal("delete"),
@@ -77,6 +78,13 @@ const TasksParamsSchema = Type.Object({
     folder: Type.Optional(Type.String({ description: "Target folder: Backlog, Active, Closed" })),
     content: Type.Optional(Type.String({ description: "Content to append to task (for append action)" })),
     newTitle: Type.Optional(Type.String({ description: "New title (for rename action)" })),
+    title: Type.Optional(Type.String({ description: "Task title (for create action)" })),
+    priority: Type.Optional(Type.Union([
+        Type.Literal("low"),
+        Type.Literal("medium"),
+        Type.Literal("high"),
+        Type.Literal("critical")
+    ], { description: "Task priority (for create action), defaults to medium" })),
 });
 type TasksParams = Static<typeof TasksParamsSchema>;
 
@@ -162,24 +170,32 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
  * Run a PowerShell script with the given arguments
  * Uses -Command with call operator (&) to properly handle arguments with spaces
  * Content arguments are base64 encoded to avoid escaping issues
+ * Switch parameters are passed as -Param (without value) when true
  */
-async function runScript(script: string, workspace: string, args: Record<string, string | undefined>): Promise<string> {
+async function runScript(script: string, workspace: string, args: Record<string, string | boolean | undefined>): Promise<string> {
     const scriptPath = resolve(__dirname, "scripts", `${script}.ps1`);
-    const allArgs = { Workspace: workspace, ...args };
     
-    // Build argument list with proper quoting for PowerShell
-    // Single quotes in values are escaped as doubled ('')
-    const escapedArgs = Object.entries(allArgs)
-        .filter(([_, v]) => v !== undefined)
-        .map(([k, v]) => {
-            // Base64 encode content to avoid escaping issues
-            const encoded = Buffer.from(String(v), "utf16le").toString("base64");
-            return `-${k} ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${encoded}')))`;
-        })
-        .join(' ');
+    const cmdParts: string[] = [];
+    
+    // Add workspace
+    cmdParts.push(`-Workspace ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${Buffer.from(workspace, "utf16le").toString("base64")}')))`);
+    
+    // Add other args
+    for (const [k, v] of Object.entries(args)) {
+        if (v === undefined) continue;
+        
+        if (typeof v === "boolean" && v) {
+            // Switch parameter - just add the flag
+            cmdParts.push(`-${k}`);
+        } else if (typeof v === "string") {
+            // String parameter - base64 encode
+            const encoded = Buffer.from(v, "utf16le").toString("base64");
+            cmdParts.push(`-${k} ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${encoded}')))`);
+        }
+    }
     
     // Use call operator (&) with -Command for proper argument handling
-    const cmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${scriptPath.replace(/'/g, "''")}' ${escapedArgs}"`;
+    const cmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${scriptPath.replace(/'/g, "''")}' ${cmdParts.join(' ')}"`;
     
     const { stdout, stderr } = await execAsync(cmd, { encoding: "utf8" });
     
@@ -294,7 +310,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
         name: "tasks",
         label: "Tasks",
-        description: "Manage tasks. Actions: list (show all), move (change folder), append (add content), delete, rename, search (find by name)",
+        description: "Manage tasks. Actions: list (show all), create (new task), move (change folder), append (add content), delete, rename, search (find by name)",
         promptSnippet: "Manage project tasks via task tools",
         promptGuidelines: ["Use task tools when asked to work with tasks, list tasks, or assign work"],
         parameters: TasksParamsSchema as any,
@@ -304,6 +320,21 @@ export default function (pi: ExtensionAPI) {
             const workspace = getWorkspaceName(ctx.cwd);
             try {
                 switch (p.action) {
+                    case "create": {
+                        if (!p.title) {
+                            return {
+                                content: [{ type: "text", text: "Error: title required for create" }],
+                                details: { error: "missing parameters" }
+                            };
+                        }
+                        const priority = p.priority || "medium";
+                        const id = await runScript("create-task", workspace, { Title: p.title, Priority: priority });
+                        return {
+                            content: [{ type: "text", text: `Created task "${p.title}" [${priority}] (${id.substring(0, 8)})` }],
+                            details: { action: "create", id, title: p.title, priority, workspace }
+                        };
+                    }
+
                     case "list": {
                         const allTasks = await getAllTasks(workspace);
                         let output = "";
@@ -717,8 +748,8 @@ export default function (pi: ExtensionAPI) {
                 // Exact match found - process directly
                 const title = exactMatch.title;
                 
-                // Move to Closed folder
-                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed" });
+                // Move to Closed folder (with AllowClosed flag)
+                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed", AllowClosed: true });
                 
                 // Append completion note
                 const qaNote = `\n## Completed\nTask marked as complete.`;
@@ -752,8 +783,8 @@ export default function (pi: ExtensionAPI) {
             if (selected) {
                 const title = selected.value;
                 
-                // Move to Closed folder
-                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed" });
+                // Move to Closed folder (with AllowClosed flag)
+                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed", AllowClosed: true });
                 
                 // Append completion note
                 const qaNote = `\n## Completed\nTask marked as complete.`;

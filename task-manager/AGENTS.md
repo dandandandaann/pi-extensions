@@ -47,6 +47,7 @@ Use the `tasks` tool for all task management:
 | Action | Parameters | Description |
 |--------|------------|-------------|
 | `list` | — | Show all tasks across folders |
+| `create` | `title`, `priority` | Create new task in Backlog (workspace auto-detected) |
 | `move` | `name`, `folder` | Move task to Backlog/Active/Closed |
 | `append` | `name`, `content` | Add content to task |
 | `delete` | `name` | Delete a task |
@@ -60,6 +61,9 @@ Use the `tasks` tool for all task management:
 // List all tasks
 tasks(action="list")
 
+// Create a new task
+tasks(action="create", title="Implement authentication", priority="high")
+
 // Move task to Active
 tasks(action="move", name="design-auth", folder="Active")
 
@@ -69,6 +73,8 @@ tasks(action="append", name="design-auth", content="## Progress\n- Completed API
 // Search for a task
 tasks(action="search", name="auth")
 ```
+
+**Note**: The workspace is always derived from the agent's current working directory. Agents cannot manually set the workspace.
 
 ## Available Commands
 
@@ -100,8 +106,8 @@ tasks(action="search", name="auth")
 ### Do: Use Task Tools
 
 - Use `tasks(action="list")` to see all tasks
+- Use `tasks(action="create", ...)` to create new tasks (workspace auto-detected from cwd)
 - Use `tasks(action="append", ...)` to record progress
-- Use `/task-new` to create tasks for new work
 - Check Active task at session start
 
 ### Don't: Access Tasks Folder Directly

@@ -3,7 +3,8 @@ param(
     [string]$Workspace,
     [Parameter(Mandatory=$true)]
     [string]$Name,
-    [string]$NewFolder
+    [string]$NewFolder,
+    [switch]$AllowClosed
 )
 $TasksRoot = "$HOME/.pi/tasks/$Workspace"
 $NameSafe = $Name -replace '[^\w\-]', '-' -replace '-+', '-'
@@ -22,7 +23,7 @@ if (-not $OldPath) {
     Write-Error "Task '$Name' not found"
     exit 1
 }
-if ($NewFolder -eq "Closed") {
+if ($NewFolder -eq "Closed" -and -not $AllowClosed) {
     Write-Error "Use /task-complete to move tasks to Closed"
     exit 1
 }
