@@ -1,0 +1,17 @@
+{
+  "name": "pi-agent-xpto",
+  "version": "1.0.0",
+  "description": "A multi-agent system for pi coding agent with per-agent configuration",
+  "main": "agent-xpto.ts",
+  "pi": {
+    "extensions": ["./agent-xpto.ts"]
+  },
+  "keywords": [
+    "pi",
+    "agent",
+    "multi-agent",
+    "coding"
+  ],
+  "author": "",
+  "license": "MIT"
+}

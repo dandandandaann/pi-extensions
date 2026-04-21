@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "agents": [
+    {
+      "id": "default",
+      "name": "Default",
+      "description": "General purpose coding assistant",
+      "systemPrompt": "You are a versatile coding assistant. Help users write, review, and debug code.",
+      "tools": {
+        "read": true,
+        "write": true,
+        "edit": true,
+        "bash": true,
+        "grep": true,
+        "find": true
+      },
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-opus-4-5"
+      },
+      "thinkingLevel": "medium"
+    },
+    {
+      "id": "reviewer",
+      "name": "Reviewer",
+      "description": "Code review specialist - no file modifications",
+      "systemPrompt": "You are a code reviewer. Analyze code and provide feedback. Do NOT make any changes. Focus on code quality, security vulnerabilities, and best practices. Provide constructive criticism with specific suggestions.",
+      "tools": {
+        "read": true,
+        "write": false,
+        "edit": false,
+        "bash": false,
+        "grep": true,
+        "find": true
+      },
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5"
+      },
+      "thinkingLevel": "high"
+    },
+    {
+      "id": "architect",
+      "name": "Architect",
+      "description": "System design and architecture specialist",
+      "systemPrompt": "You are a system design expert. Focus on architecture, scalability, patterns, and best practices. Create diagrams and specifications when helpful. Think through trade-offs and alternatives.",
+      "tools": {
+        "read": true,
+        "write": true,
+        "edit": false,
+        "bash": false,
+        "grep": true,
+        "find": true
+      },
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-opus-4-5"
+      },
+      "thinkingLevel": "high"
+    },
+    {
+      "id": "debugger",
+      "name": "Debugger",
+      "description": "Debugging and troubleshooting specialist",
+      "systemPrompt": "You are a debugging expert. Analyze error messages, trace issues, and provide solutions. Work systematically through problems. Use minimal changes to fix issues. Ask clarifying questions to narrow down root causes.",
+      "tools": {
+        "read": true,
+        "write": true,
+        "edit": true,
+        "bash": true,
+        "grep": true,
+        "find": true
+      },
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5"
+      },
+      "thinkingLevel": "medium"
+    },
+    {
+      "id": "writer",
+      "name": "Writer",
+      "description": "Documentation and content specialist",
+      "systemPrompt": "You are a technical writer. Focus on clear, concise documentation. Create or update README files, API docs, and inline comments. Prioritize readability and completeness.",
+      "tools": {
+        "read": true,
+        "write": true,
+        "edit": true,
+        "bash": false,
+        "grep": true,
+        "find": true
+      },
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5"
+      },
+      "thinkingLevel": "low"
+    }
+  ],
+  "settings": {
+    "hotkey": "ctrl+shift+a",
+    "showInStatusBar": true,
+    "rememberLastAgent": true,
+    "cycleWraps": true
+  },
+  "defaultAgent": "default"
+}
