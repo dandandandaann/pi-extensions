@@ -7,9 +7,9 @@
  * - Enforces single-active task policy with user confirmation
  */
 
-import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import type { Static } from "@sinclair/typebox";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
@@ -61,6 +61,24 @@ interface ListResult {
     folder: string;
     tasks: TaskInfo[];
 }
+
+// Define the params schema type for type safety
+const TasksParamsSchema = Type.Object({
+    action: Type.Union([
+        Type.Literal("list"),
+        Type.Literal("move"),
+        Type.Literal("append"),
+        Type.Literal("delete"),
+        Type.Literal("rename"),
+        Type.Literal("search"),
+        Type.Literal("get"),
+    ]),
+    name: Type.Optional(Type.String({ description: "Task name (partial match supported)" })),
+    folder: Type.Optional(Type.String({ description: "Target folder: Backlog, Active, Closed" })),
+    content: Type.Optional(Type.String({ description: "Content to append to task (for append action)" })),
+    newTitle: Type.Optional(Type.String({ description: "New title (for rename action)" })),
+});
+type TasksParams = Static<typeof TasksParamsSchema>;
 
 /**
  * Parse PowerShell output into structured task data
@@ -237,15 +255,13 @@ export default function (pi: ExtensionAPI) {
             let path: string | undefined;
             
             if (toolName === "bash" && "command" in event.input) {
-                path = event.input.command;
+                path = event.input.command as string | undefined;
             } else if ("path" in event.input) {
-                path = event.input.path;
+                path = event.input.path as string | undefined;
             }
             
             if (path) {
                 const resolved = resolve(ctx.cwd, path);
-                const workspace = getWorkspaceName(ctx.cwd);
-                const workspaceTaskDir = `${TASKS_ROOT}/${workspace}`;
                 if (resolved.startsWith(TASKS_ROOT) || resolved.replace(/\\/g, "/").startsWith(TASKS_ROOT.replace(/\\/g, "/"))) {
                     const ok = await ctx.ui.confirm(
                         "Task Access",
@@ -266,18 +282,13 @@ export default function (pi: ExtensionAPI) {
         description: "Manage tasks. Actions: list (show all), move (change folder), append (add content), delete, rename, search (find by name)",
         promptSnippet: "Manage project tasks via task tools",
         promptGuidelines: ["Use task tools when asked to work with tasks, list tasks, or assign work"],
-        parameters: Type.Object({
-            action: StringEnum(["list", "move", "append", "delete", "rename", "search", "get"] as const),
-            name: Type.Optional(Type.String({ description: "Task name (partial match supported)" })),
-            folder: Type.Optional(Type.String({ description: "Target folder: Backlog, Active, Closed" })),
-            content: Type.Optional(Type.String({ description: "Content to append to task (for append action)" })),
-            newTitle: Type.Optional(Type.String({ description: "New title (for rename action)" })),
-        }),
+        parameters: TasksParamsSchema as any,
 
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            const p = params as TasksParams;
             const workspace = getWorkspaceName(ctx.cwd);
             try {
-                switch (params.action) {
+                switch (p.action) {
                     case "list": {
                         const allTasks = await getAllTasks(workspace);
                         let output = "";
@@ -296,7 +307,7 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "move": {
-                        if (!params.name || !params.folder) {
+                        if (!p.name || !p.folder) {
                             return {
                                 content: [{ type: "text", text: "Error: name and folder required for move" }],
                                 details: { error: "missing parameters" }
@@ -304,14 +315,14 @@ export default function (pi: ExtensionAPI) {
                         }
 
                         // Check if moving to Active and there's already an active task
-                        if (params.folder === "Active") {
+                        if (p.folder === "Active") {
                             const activeTasks = await listTasks(workspace, "Active");
                             if (activeTasks.length > 0) {
-                                const current = await findTask(workspace, params.name);
+                                const current = await findTask(workspace, p.name);
                                 if (!current || current.folder !== "Active") {
                                     const proceed = await ctx.ui.confirm(
                                         "Active Task Exists",
-                                        `Move "${activeTasks[0].title}" to Backlog and set "${params.name}" to Active?`
+                                        `Move "${activeTasks[0].title}" to Backlog and set "${p.name}" to Active?`
                                     );
                                     if (!proceed) {
                                         return {
@@ -325,66 +336,66 @@ export default function (pi: ExtensionAPI) {
                             }
                         }
 
-                        const result = await runScript("move-task", workspace, { Name: params.name, NewFolder: params.folder });
+                        const result = await runScript("move-task", workspace, { Name: p.name, NewFolder: p.folder });
                         return {
-                            content: [{ type: "text", text: `Moved "${params.name}" to ${params.folder}` }],
+                            content: [{ type: "text", text: `Moved "${p.name}" to ${p.folder}` }],
                             details: { action: "move", result }
                         };
                     }
 
                     case "append": {
-                        if (!params.name || !params.content) {
+                        if (!p.name || !p.content) {
                             return {
                                 content: [{ type: "text", text: "Error: name and content required for append" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        await runScript("append-task", workspace, { Name: params.name, Content: params.content });
+                        await runScript("append-task", workspace, { Name: p.name, Content: p.content });
                         return {
-                            content: [{ type: "text", text: `Added to "${params.name}"` }],
+                            content: [{ type: "text", text: `Added to "${p.name}"` }],
                             details: { action: "append" }
                         };
                     }
 
                     case "delete": {
-                        if (!params.name) {
+                        if (!p.name) {
                             return {
                                 content: [{ type: "text", text: "Error: name required for delete" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const folder = await runScript("delete-task", workspace, { Name: params.name });
+                        const folder = await runScript("delete-task", workspace, { Name: p.name });
                         return {
-                            content: [{ type: "text", text: `Deleted "${params.name}" from ${folder}` }],
+                            content: [{ type: "text", text: `Deleted "${p.name}" from ${folder}` }],
                             details: { action: "delete", folder }
                         };
                     }
 
                     case "rename": {
-                        if (!params.name || !params.newTitle) {
+                        if (!p.name || !p.newTitle) {
                             return {
                                 content: [{ type: "text", text: "Error: name and newTitle required for rename" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const folder = await runScript("rename-task", workspace, { Name: params.name, NewTitle: params.newTitle });
+                        const folder = await runScript("rename-task", workspace, { Name: p.name, NewTitle: p.newTitle });
                         return {
-                            content: [{ type: "text", text: `Renamed to "${params.newTitle}" (${folder})` }],
+                            content: [{ type: "text", text: `Renamed to "${p.newTitle}" (${folder})` }],
                             details: { action: "rename", folder }
                         };
                     }
 
                     case "search": {
-                        if (!params.name) {
+                        if (!p.name) {
                             return {
                                 content: [{ type: "text", text: "Error: name required for search" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const task = await findTask(workspace, params.name);
+                        const task = await findTask(workspace, p.name);
                         if (!task) {
                             return {
-                                content: [{ type: "text", text: `No task found matching "${params.name}"` }],
+                                content: [{ type: "text", text: `No task found matching "${p.name}"` }],
                                 details: { action: "search", found: false }
                             };
                         }
@@ -395,20 +406,20 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "get": {
-                        if (!params.name) {
+                        if (!p.name) {
                             return {
                                 content: [{ type: "text", text: "Error: name required for get" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const task = await findTask(workspace, params.name);
+                        const task = await findTask(workspace, p.name);
                         if (!task) {
                             return {
-                                content: [{ type: "text", text: `No task found matching "${params.name}"` }],
+                                content: [{ type: "text", text: `No task found matching "${p.name}"` }],
                                 details: { action: "get", found: false }
                             };
                         }
-                        const output = await runScript("append-task", workspace, { Name: params.name });
+                        const output = await runScript("append-task", workspace, { Name: p.name });
                         return {
                             content: [{ type: "text", text: output }],
                             details: { action: "get", task }
@@ -417,7 +428,7 @@ export default function (pi: ExtensionAPI) {
 
                     default:
                         return {
-                            content: [{ type: "text", text: `Unknown action: ${params.action}` }],
+                            content: [{ type: "text", text: `Unknown action: ${p.action}` }],
                             details: { error: "unknown action" }
                         };
                 }
@@ -486,7 +497,7 @@ export default function (pi: ExtensionAPI) {
                         content: content,
                         display: true,
                         details: { name: taskName }
-                    }, "steer");
+                    }, { deliverAs: "steer" });
                 } else {
                     ctx.ui.notify(`Could not read task "${taskName}"`, "error");
                 }
@@ -564,7 +575,7 @@ export default function (pi: ExtensionAPI) {
                     await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
                 }
                 await runScript("move-task", workspace, { Name: title, NewFolder: "Active" });
-                ctx.ui.notify(`Now active: "${title}"`, "success");
+                ctx.ui.notify(`Now active: "${title}"`, "info");
             }
         },
     });
@@ -589,7 +600,7 @@ export default function (pi: ExtensionAPI) {
             }
 
             const id = await runScript("create-task", workspace, { Title: title, Priority: priority });
-            ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "success");
+            ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "info");
         },
     });
 
@@ -623,7 +634,7 @@ export default function (pi: ExtensionAPI) {
                 const qaNote = `\n## User QA\nTask has finished user QA testing.`;
                 await runScript("append-task", workspace, { Name: title, Content: qaNote });
                 
-                ctx.ui.notify(`Moved "${title}" to user-qa`, "success");
+                ctx.ui.notify(`Moved "${title}" to user-qa`, "info");
                 return;
             }
             
@@ -658,7 +669,7 @@ export default function (pi: ExtensionAPI) {
                 const qaNote = `\n## User QA\nTask has finished user QA testing.`;
                 await runScript("append-task", workspace, { Name: title, Content: qaNote });
                 
-                ctx.ui.notify(`Moved "${title}" to user-qa`, "success");
+                ctx.ui.notify(`Moved "${title}" to user-qa`, "info");
             }
         },
     });
