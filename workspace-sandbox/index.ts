@@ -19,7 +19,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import path from "node:path";
 import os from "node:os";
 
-const VERSION = "0.1.3";
+const VERSION = "0.1.4";
 
 interface WorkspaceSandboxConfig {
   allowedDirs?: string[];
@@ -73,7 +73,7 @@ export default function (pi: ExtensionAPI) {
   // Try to load config from settings (read from a custom config file if needed)
   // For simplicity, we'll use hardcoded defaults + environment variable override
   if (process.env.PI_WORKSPACE_ALLOWED_DIRS) {
-    config.allowedDirs = process.env.PI_WORKSPACE_ALLOWED_DIRS.split(",").map((d) =>
+    config.allowedDirs = process.env.PI_WORKSPACE_ALLOWED_DIRS.split(",").map((d: string) =>
       path.resolve(d.trim().replace(/^~/, os.homedir()))
     );
   }
@@ -171,9 +171,11 @@ export default function (pi: ExtensionAPI) {
     });
 
     // Common path patterns after commands (Unix)
-    // Only capture actual paths (starting with / or ~), not flags/values
+    // Only capture actual paths (starting with /, ~, or Windows drive letter), not flags/values
     const unixPathPatterns = [
-      /\b(cd|mkdir|mv|cp|rm|ls|cat|touch|chmod|chown|scp|rsync|find)\s+(\/[^\s;|&><]+|~[^\s;|&><]+)/gi,
+      /\b(cd|mkdir|mv|rm|ls|cat|touch|chmod|chown|scp|rsync|find)\s+(\/[^\s;|&><]+|~[^\s;|&><]+|[A-Za-z]:[^\s;|&><]+)/gi,
+      // cp/mv with two paths (source then destination)
+      /\b(cp|mv)\s+(\/[^\s;|&><]+|~[^\s;|&><]+|[A-Za-z]:[^\s;|&><]+)\s+(\/[^\s;|&><]+|~[^\s;|&><]+|[A-Za-z]:[^\s;|&><]+)/gi,
       /\b(ssh|sftp)\s+([^-][^\s;|&]+)/gi,
       /-o\s+([^=]+)/g, // SSH options
       /--out-dir\s+([^\s]+)/g,
@@ -187,12 +189,44 @@ export default function (pi: ExtensionAPI) {
       /([A-Za-z]:\\[^\s;|&><]+)/g, // Drive letter paths
     ];
 
-    [...unixPathPatterns, ...winPathPatterns].forEach((re) => {
+    // PowerShell cmdlet patterns for write/destructive operations
+    const psCmdletPatterns = [
+      // New-Item -Path <path> [-ItemType File|Directory]
+      /New-Item\s+-Path\s+([^-][^\s;|&><]+)/gi,
+      // Set-Content, Add-Content -Path <path> or first positional
+      /(?:Set-Content|Add-Content|Out-File)\s+-Path\s+([^-][^\s;|&><]+)/gi,
+      /\b(Set-Content|Add-Content|Out-File)\s+([^-][^\s;|&><]+)/gi,
+      // Copy-Item, Move-Item, Remove-Item -Path <path>
+      /(?:Copy-Item|Move-Item|Remove-Item|Rename-Item)\s+-Path\s+([^-][^\s;|&><]+)/gi,
+      // General -Destination parameter (allows other params before it)
+      /(?:Copy-Item|Move-Item|Compress-Archive|Expand-Archive|Tee-Object)\s+.*-Destination(?:Path)?\s+([^-][^\s;|&><]+)/gi,
+      // Get-Content (read-only)
+      /Get-Content\s+-Path\s+([^-][^\s;|&><]+)/gi,
+      // Invoke-WebRequest/Invoke-RestMethod -OutFile <path>
+      /(?:Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\s+-OutFile\s+([^-][^\s;|&><]+)/gi,
+      // OutFile parameter (for any cmdlet)
+      /-OutFile\s+([^-][^\s;|&><]+)/gi,
+      // Start-Process -FilePath <path> or with > redirect
+      /Start-Process\s+-FilePath\s+([^-][^\s;|&><]+)/gi,
+      // Export-Csv, Export-Clixml, Export-ModuleMember
+      /Export-(?:Csv|Clixml|ModuleMember)\s+-Path\s+([^-][^\s;|&><]+)/gi,
+      // Import-Module <path>
+      /Import-Module\s+([^-][^\s;|&><]+)/gi,
+      // ConvertTo-Json/ConvertFrom-Json with -Path
+      /ConvertTo-(?:Json|Xml|Yaml)\s+-Path\s+([^-][^\s;|&><]+)/gi,
+      // Tee-Object -FilePath
+      /Tee-Object\s+-FilePath\s+([^-][^\s;|&><]+)/gi,
+    ];
+
+    [...unixPathPatterns, ...winPathPatterns, ...psCmdletPatterns].forEach((re) => {
       let match;
       while ((match = re.exec(command)) !== null) {
-        const candidate = match[match.length - 1];
-        if (candidate && !candidate.startsWith("-") && candidate.length > 1) {
-          paths.push(candidate.replace(/['"]/g, ""));
+        // For patterns with multiple capture groups (like cp src dest), extract all path groups
+        for (let i = 1; i < match.length; i++) {
+          const candidate = match[i];
+          if (candidate && !candidate.startsWith("-") && candidate.length > 1) {
+            paths.push(candidate.replace(/['"]/g, ""));
+          }
         }
       }
     });
@@ -219,9 +253,24 @@ export default function (pi: ExtensionAPI) {
   }
 
   // Reset allow-all when user sends new input
-  pi.on("input", async (_event, _ctx) => {
+  pi.on("input", async (_event: unknown, _ctx: unknown) => {
     allowAllUntilInput = false;
   });
+
+  // Safe read-only bash commands that don't need path permission checks
+  const READ_ONLY_COMMANDS = new Set([
+    "ls", "dir", "cat", "find", "grep", "head", "tail", "wc", "stat",
+    "type", "more", "less", "xdg-open", "code", "open", "echo", "pwd",
+    "findstr"
+  ]);
+
+  function isReadOnlyCommand(command: string): boolean {
+    const trimmed = command.trim();
+    // Check for pipes and redirects to see if it's just read operations
+    const parts = trimmed.split(/[|&;]/);
+    const firstCmd = parts[0].trim().split(/\s+/)[0].toLowerCase();
+    return READ_ONLY_COMMANDS.has(firstCmd);
+  }
 
   // Register /sandbox command for status and manual control
   pi.registerCommand("sandbox", {
@@ -230,12 +279,12 @@ export default function (pi: ExtensionAPI) {
       const opts = ["status", "allow", "strict", "dangerous"];
       return opts.filter(o => o.startsWith(prefix)).map(o => ({ value: o }));
     },
-    handler: async (args, ctx) => {
+    handler: async (args: string | undefined, ctx: { ui: { notify: (msg: string, type: string) => void } }) => {
       const cmd = args?.toLowerCase();
       
       if (!cmd || cmd === "status") {
         const status = allowAllUntilInput ? "🟢 Allow All active" : "🔒 Sandbox active";
-        ctx.ui.notify(`${status} [v${VERSION}] - ${config.dangerousPatterns.length} dangerous patterns`, "info");
+        ctx.ui.notify(`${status} [v${VERSION}] - ${(config.dangerousPatterns || []).length} dangerous patterns`, "info");
         return;
       }
       
@@ -252,7 +301,7 @@ export default function (pi: ExtensionAPI) {
       }
       
       if (cmd === "dangerous") {
-        const patterns = config.dangerousPatterns.join(", ");
+        const patterns = (config.dangerousPatterns || []).join(", ");
         ctx.ui.notify(`Dangerous patterns: ${patterns}`, "info");
         return;
       }
@@ -262,16 +311,21 @@ export default function (pi: ExtensionAPI) {
   });
 
   // --- Main Handler ---
-  pi.on("tool_call", async (event, ctx) => {
+  pi.on("tool_call", async (event: { toolName: string; input: Record<string, unknown> }, ctx: any) => {
     // If allow-all is active, skip checks
     if (allowAllUntilInput) {
       return undefined;
     }
 
-    // Only check write, edit, ~read,~ and bash tools
+    // Only check write, edit, and bash tools (skip read)
     if (!["write", "edit", "bash"].includes(event.toolName)) {
       return undefined;
     }
+
+    // Skip path permission checks for read-only bash commands (ls, find, cat, grep, etc.)
+    const isReadOnlyBash =
+      event.toolName === "bash" &&
+      isReadOnlyCommand(event.input.command as string);
 
     // Get target path
     let targetPath: string | null = null;
@@ -290,7 +344,7 @@ export default function (pi: ExtensionAPI) {
     const escapedPaths: string[] = [];
 
     // Check if path is outside workspace
-    if (targetPath) {
+    if (targetPath && !isReadOnlyBash) {
       // Resolve relative paths and expand ~
       const expandedPath = resolveTargetPath(targetPath, workspace).replace(/^~/, os.homedir());
       if (isPathOutsideWorkspace(expandedPath, workspace)) {
@@ -298,8 +352,8 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // For bash, also check all paths in the command
-    if (event.toolName === "bash") {
+    // For bash, also check all paths in the command (skip for read-only commands)
+    if (event.toolName === "bash" && !isReadOnlyBash) {
       const command = event.input.command as string;
       const allPaths = extractPathsFromCommand(command);
       for (const p of allPaths) {
@@ -312,7 +366,7 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // Check for dangerous patterns in bash commands
+    // Check for dangerous patterns in bash commands (still apply to read-only commands)
     const isDangerous =
       event.toolName === "bash" &&
       !config.skipDangerousCheck &&
@@ -320,21 +374,19 @@ export default function (pi: ExtensionAPI) {
 
     // Block without UI
     if (!ctx.hasUI) {
-      if (escapedPaths.length > 0 || isDangerous) {
+      if (isDangerous) {
         return {
           block: true,
-          reason: escapedPaths.length > 0
-            ? `Blocked by the User: Path(s) outside workspace: ${escapedPaths.join(", ")}`
-            : "Blocked by the User: Dangerous command (no UI for confirmation)",
+          reason: "Blocked by the User: Dangerous command (no UI for confirmation)",
         };
       }
       return undefined;
     }
 
-    // Build warning message
+    // Show confirmation dialog
     const warnings: string[] = [];
 
-    if (escapedPaths.length > 0) {
+    if (escapedPaths.length > 0 && !isReadOnlyBash) {
       warnings.push(`📁 Paths outside workspace:\n    ${escapedPaths.join(", ")}`);
     }
 
@@ -345,15 +397,18 @@ export default function (pi: ExtensionAPI) {
     if (warnings.length === 0) {
       return undefined;
     }
-
-    // Show confirmation dialog
     const fullMessage = `🔒 Security Check Required\n\n${warnings.join("\n\n")}\n\nAllow?`;
 
     const choice = await ctx.ui.select(fullMessage, ["Allow", "Block", "Allow All (this turn)"]);
 
 
     if (choice === "Block" || choice === undefined) {
-      const reason = escapedPaths.length > 0
+      // For read-only commands with path warnings, just allow them (don't block)
+      if (isReadOnlyBash && escapedPaths.length > 0) {
+        ctx.ui.notify("Read-only command allowed (path outside workspace)", "info");
+        return undefined;
+      }
+      const reason = escapedPaths.length > 0 && !isReadOnlyBash
         ? `Blocked by the User: Path(s) outside workspace: ${escapedPaths.join(", ")}`
         : "Blocked by the User: Dangerous command";
       return { block: true, reason };

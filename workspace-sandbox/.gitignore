@@ -1,0 +1,15 @@
+# Dependencies (if added later)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# Build output
+dist/
+build/
