@@ -47,6 +47,7 @@ tags:
 | `/tasks` | List all tasks by folder |
 | `/task <name>` | Assign a task to Active |
 | `/task-new <title> [--priority=high]` | Create new task in Backlog |
+| `/task-open <name>` | Open a task file in the default editor |
 | `/task-complete <name>` | Mark task as complete (moves to user-qa) |
 
 ## Tools (for LLM)

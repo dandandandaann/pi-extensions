@@ -83,6 +83,7 @@ tasks(action="search", name="auth")
 | `/tasks` | List all tasks with interactive picker |
 | `/task <name>` | Assign task to Active (auto-switches) |
 | `/task-new <title> [--priority=high]` | Create new task in Backlog |
+| `/task-open <name>` | Open task file in default editor |
 | `/task-complete <name>` | Mark task as complete (moves to user-qa) |
 
 ### Command Examples

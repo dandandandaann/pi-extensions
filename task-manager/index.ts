@@ -627,27 +627,176 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
+    // Helper to find task file path and open it in default editor
+    async function findTaskPath(workspace: string, name: string): Promise<string | null> {
+        const nameSafe = name.toLowerCase().replace(/[^\w\-]/g, "-").replace(/-+/g, "-");
+        
+        for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
+            const folderPath = resolve(TASKS_ROOT, workspace, folder);
+            const { readdir } = await import("node:fs/promises");
+            
+            let files: string[];
+            try {
+                files = await readdir(folderPath);
+            } catch {
+                continue;
+            }
+            
+            for (const file of files) {
+                if (!file.endsWith(".md")) continue;
+                if (file.toLowerCase().startsWith(nameSafe)) {
+                    return resolve(folderPath, file);
+                }
+            }
+        }
+        return null;
+    }
+
+    async function openTaskFileInEditor(filePath: string, title: string, ctx: any) {
+        try {
+            const isWindows = process.platform === "win32";
+            const cmd = isWindows ? `start "" "${filePath}"` : `open "${filePath}"`;
+            await execAsync(cmd);
+            ctx.ui.notify(`Opened "${title}" in editor`, "info");
+        } catch (error) {
+            ctx.ui.notify(`Error opening task: ${error instanceof Error ? error.message : String(error)}`, "error");
+        }
+    }
+
+    // Register /task-open command - open a task in the default editor
+    pi.registerCommand("task-open", {
+        description: "Open a task file in the default editor (use /task-open <name>)",
+        async handler(args, ctx) {
+            const workspace = getWorkspaceName(ctx.cwd);
+            
+            if (!args) {
+                // No args provided - show picker with all tasks
+                const allTasks = await getAllTasks(workspace);
+                const items: { value: string; label: string }[] = [];
+                
+                for (const result of allTasks) {
+                    for (const task of result.tasks) {
+                        items.push({
+                            value: task.title,
+                            label: `[${result.folder}] ${task.title}`
+                        });
+                    }
+                }
+                
+                if (items.length === 0) {
+                    ctx.ui.notify("No tasks found", "info");
+                    return;
+                }
+                
+                const choice = await ctx.ui.select("Select a task to open:", items.map(i => i.label));
+                if (!choice) {
+                    ctx.ui.notify("Cancelled", "info");
+                    return;
+                }
+                
+                const selected = items.find((_, i) => items[i].label === choice);
+                if (selected) {
+                    const filePath = await findTaskPath(workspace, selected.value);
+                    if (filePath) {
+                        await openTaskFileInEditor(filePath, selected.value, ctx);
+                    } else {
+                        ctx.ui.notify(`Could not find task file for "${selected.value}"`, "error");
+                    }
+                }
+                return;
+            }
+            
+            // Find tasks matching the input
+            const matches = await findAllMatching(workspace, args);
+            
+            // Check for exact match (case-insensitive, normalized)
+            const exactMatch = matches.find(m => 
+                m.title.toLowerCase() === args.toLowerCase() ||
+                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
+            );
+            
+            if (exactMatch) {
+                // Exact match found - open directly
+                const filePath = await findTaskPath(workspace, exactMatch.title);
+                if (filePath) {
+                    await openTaskFileInEditor(filePath, exactMatch.title, ctx);
+                } else {
+                    ctx.ui.notify(`Could not find task file for "${exactMatch.title}"`, "error");
+                }
+                return;
+            }
+            
+            if (matches.length === 0) {
+                ctx.ui.notify(`No task found matching "${args}"`, "error");
+                return;
+            }
+            
+            // No exact match - show disambiguation list
+            const items: { value: string; label: string }[] = [];
+            for (const task of matches) {
+                items.push({
+                    value: task.title,
+                    label: `[${task.folder}] ${task.title}`
+                });
+            }
+            
+            const choice = await ctx.ui.select(`${matches.length} tasks matching "${args}":`, items.map(i => i.label));
+            if (!choice) {
+                ctx.ui.notify("Cancelled", "info");
+                return;
+            }
+            
+            const selected = items.find((_, i) => items[i].label === choice);
+            if (selected) {
+                const filePath = await findTaskPath(workspace, selected.value);
+                if (filePath) {
+                    await openTaskFileInEditor(filePath, selected.value, ctx);
+                } else {
+                    ctx.ui.notify(`Could not find task file for "${selected.value}"`, "error");
+                }
+            }
+        },
+    });
+
     // Register /task-new command - create a new task
     pi.registerCommand("task-new", {
-        description: "Create a new task (use /task-new <title> [--priority=high])",
+        description: "Create a new task (use /task-new [-o] <title> [--priority=high])",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             if (!args) {
-                ctx.ui.notify("Usage: /task-new <title> [--priority=low|medium|high|critical]", "info");
+                ctx.ui.notify("Usage: /task-new [-o] <title> [--priority=low|medium|high|critical]", "info");
                 return;
             }
 
+            // Parse -o flag (must be at start, standalone)
+            let openTask = false;
+            let remaining = args;
+            if (args.match(/^-o\s/)) {
+                openTask = true;
+                remaining = args.replace(/^-o\s/, "");
+            }
+
             // Parse priority from args if present
-            let title = args;
+            let title = remaining;
             let priority = "medium";
-            const priorityMatch = args.match(/--priority=(\w+)/);
+            const priorityMatch = remaining.match(/--priority=(\w+)/);
             if (priorityMatch) {
                 priority = priorityMatch[1];
-                title = args.replace(/--priority=\w+\s*/, "");
+                title = remaining.replace(/--priority=\w+\s*/, "");
             }
 
             const id = await runScript("create-task", workspace, { Title: title, Priority: priority });
             ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "info");
+
+            // Open task after creation if -o flag was set
+            if (openTask) {
+                const filePath = await findTaskPath(workspace, title);
+                if (filePath) {
+                    await openTaskFileInEditor(filePath, title, ctx);
+                } else {
+                    ctx.ui.notify(`Could not find task file for "${title}"`, "error");
+                }
+            }
         },
     });
 
