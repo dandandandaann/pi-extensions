@@ -4,6 +4,7 @@
   "description": "Manages project tasks via MD files with PowerShell CRUD scripts.",
   "main": "dist/index.js",
   "scripts": {
+    "build": "echo 'Extension built. Ask user to /reload'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

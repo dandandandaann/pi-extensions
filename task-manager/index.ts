@@ -112,6 +112,16 @@ async function getAllTasks(workspace: string): Promise<ListResult[]> {
 }
 
 /**
+ * Get tasks excluding Closed folder (for /tasks command)
+ */
+async function getOpenTasks(workspace: string): Promise<ListResult[]> {
+    return Promise.all(["Backlog", "Active", "user-qa"].map(async folder => ({
+        folder,
+        tasks: await listTasks(workspace, folder)
+    })));
+}
+
+/**
  * Get full task file content by scanning the directory
  */
 async function getTaskContent(workspace: string, name: string): Promise<string | null> {
@@ -151,6 +161,7 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
 /**
  * Run a PowerShell script with the given arguments
  * Uses -Command with call operator (&) to properly handle arguments with spaces
+ * Content arguments are base64 encoded to avoid escaping issues
  */
 async function runScript(script: string, workspace: string, args: Record<string, string | undefined>): Promise<string> {
     const scriptPath = resolve(__dirname, "scripts", `${script}.ps1`);
@@ -160,7 +171,11 @@ async function runScript(script: string, workspace: string, args: Record<string,
     // Single quotes in values are escaped as doubled ('')
     const escapedArgs = Object.entries(allArgs)
         .filter(([_, v]) => v !== undefined)
-        .map(([k, v]) => `-${k} '${String(v).replace(/'/g, "''")}'`)
+        .map(([k, v]) => {
+            // Base64 encode content to avoid escaping issues
+            const encoded = Buffer.from(String(v), "utf16le").toString("base64");
+            return `-${k} ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${encoded}')))`;
+        })
         .join(' ');
     
     // Use call operator (&) with -Command for proper argument handling
@@ -447,9 +462,9 @@ export default function (pi: ExtensionAPI) {
         async handler(_args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             if (!ctx.hasUI) {
-                const allTasks = await getAllTasks(workspace);
+                const openTasks = await getOpenTasks(workspace);
                 let output = "Tasks:\n";
-                for (const result of allTasks) {
+                for (const result of openTasks) {
                     if (result.tasks.length > 0) {
                         output += `\n${result.folder}:\n`;
                         for (const task of result.tasks) {
@@ -461,11 +476,12 @@ export default function (pi: ExtensionAPI) {
                 return;
             }
 
+
             // Interactive picker
-            const allTasks = await getAllTasks(workspace);
+            const openTasks = await getOpenTasks(workspace);
             const items: { value: string; label: string }[] = [];
             
-            for (const result of allTasks) {
+            for (const result of openTasks) {
                 for (const task of result.tasks) {
                     items.push({
                         value: `${result.folder}:${task.title}`,
@@ -604,7 +620,7 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
-    // Register /task-complete command - mark task as completed by user QA
+    // Register /task-complete command - mark task as completed
     pi.registerCommand("task-complete", {
         description: "Mark a task as complete (use /task-complete <name>)",
         async handler(args, ctx) {
@@ -627,14 +643,14 @@ export default function (pi: ExtensionAPI) {
                 // Exact match found - process directly
                 const title = exactMatch.title;
                 
-                // Move to user-qa folder
-                await runScript("move-task", workspace, { Name: title, NewFolder: "user-qa" });
+                // Move to Closed folder
+                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed" });
                 
                 // Append completion note
-                const qaNote = `\n## User QA\nTask has finished user QA testing.`;
+                const qaNote = `\n## Completed\nTask marked as complete.`;
                 await runScript("append-task", workspace, { Name: title, Content: qaNote });
                 
-                ctx.ui.notify(`Moved "${title}" to user-qa`, "info");
+                ctx.ui.notify(`Moved "${title}" to Closed`, "info");
                 return;
             }
             
@@ -662,14 +678,14 @@ export default function (pi: ExtensionAPI) {
             if (selected) {
                 const title = selected.value;
                 
-                // Move to user-qa folder
-                await runScript("move-task", workspace, { Name: title, NewFolder: "user-qa" });
+                // Move to Closed folder
+                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed" });
                 
                 // Append completion note
-                const qaNote = `\n## User QA\nTask has finished user QA testing.`;
+                const qaNote = `\n## Completed\nTask marked as complete.`;
                 await runScript("append-task", workspace, { Name: title, Content: qaNote });
                 
-                ctx.ui.notify(`Moved "${title}" to user-qa`, "info");
+                ctx.ui.notify(`Moved "${title}" to Closed`, "info");
             }
         },
     });

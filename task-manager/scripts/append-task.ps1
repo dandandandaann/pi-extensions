@@ -9,7 +9,7 @@ $TasksRoot = "$HOME/.pi/tasks/$Workspace"
 $NameSafe = $Name -replace '[^\w\-]', '-' -replace '-+', '-'
 $Found = $null
 $FilePath = $null
-foreach ($folder in @("Backlog", "Active", "Closed")) {
+foreach ($folder in @("Backlog", "Active", "user-qa", "Closed")) {
     $Pattern = "$NameSafe*.md"
     $Files = Get-ChildItem -Path "$TasksRoot/$folder" -Filter $Pattern -ErrorAction SilentlyContinue
     if ($Files) {
