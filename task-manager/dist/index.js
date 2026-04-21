@@ -1,126 +1,133 @@
+"use strict";
 /**
  * Task Manager Extension for Pi
- * 
+ *
  * Manages tasks via PowerShell scripts that operate on MD files.
  * - Blocks direct access to ~/.pi/tasks/ folder
  * - Provides CRUD tools and commands for task management
  * - Enforces single-active task policy with user confirmation
  */
-
-import { StringEnum } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import { resolve } from "node:path";
-import { Text } from "@mariozechner/pi-tui";
-
-const execAsync = promisify(exec);
-const TASKS_ROOT = resolve(process.env.HOME || process.env.USERPROFILE || "", ".pi", "tasks");
-
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = default_1;
+const pi_ai_1 = require("@mariozechner/pi-ai");
+const typebox_1 = require("@sinclair/typebox");
+const node_child_process_1 = require("node:child_process");
+const node_util_1 = require("node:util");
+const node_path_1 = require("node:path");
+const pi_tui_1 = require("@mariozechner/pi-tui");
+const execAsync = (0, node_util_1.promisify)(node_child_process_1.exec);
+const TASKS_ROOT = (0, node_path_1.resolve)(process.env.HOME || process.env.USERPROFILE || "", ".pi", "tasks");
 /**
  * Register message renderer for task entries
  */
-function registerTaskRenderer(pi: ExtensionAPI): void {
+function registerTaskRenderer(pi) {
     pi.registerMessageRenderer("task", (message, options, theme) => {
         const { expanded } = options;
-        const taskName = (message.details as { name?: string })?.name || "Task";
-        
+        const taskName = message.details?.name || "Task";
         let header = theme.fg("accent", `📋 ${taskName}`);
         let body = message.content;
-        
         if (expanded && message.details) {
             body += "\n" + theme.fg("dim", JSON.stringify(message.details, null, 2));
         }
-        
-        return new Text(`${header}\n\n${body}`, 1, 1);
+        return new pi_tui_1.Text(`${header}\n\n${body}`, 1, 1);
     });
 }
-
 /**
  * Get workspace name from cwd (e.g., "C:/temp" -> "C-temp")
  */
-function getWorkspaceName(cwd: string): string {
+function getWorkspaceName(cwd) {
     // Normalize path: remove duplicate slashes, trailing slashes
     const normalized = cwd.replace(/\\+/g, "/").replace(/\/+/g, "/").replace(/\/$/, "");
     // Replace drive letter colon and path separators with dashes
     return normalized.replace(/[:\/]/g, "-").replace(/^-+|-+$/g, "");
 }
-
-interface TaskInfo {
-    id: string;
-    title: string;
-    priority: string;
-    created: string;
-    folder: string;
-    path?: string;
-}
-
-interface ListResult {
-    folder: string;
-    tasks: TaskInfo[];
-}
-
 /**
  * Parse PowerShell output into structured task data
  */
-async function listTasks(workspace: string, folder: string): Promise<TaskInfo[]> {
-    const scriptPath = resolve(__dirname, "scripts", "list-tasks.ps1");
-    const { stdout } = await execAsync(
-        `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -Workspace "${workspace}" -Folder "${folder}"`,
-        { encoding: "utf8" }
-    );
-    
-    if (!stdout.trim()) return [];
-    
+async function listTasks(workspace, folder) {
+    const scriptPath = (0, node_path_1.resolve)(__dirname, "scripts", "list-tasks.ps1");
+    const { stdout } = await execAsync(`powershell -ExecutionPolicy Bypass -File "${scriptPath}" -Workspace "${workspace}" -Folder "${folder}"`, { encoding: "utf8" });
+    if (!stdout.trim())
+        return [];
     return stdout.trim().split("\n")
         .map(line => line.trim())
         .filter(line => line.length > 0)
         .map(line => {
-            const [id, title, priority, created] = line.split("\t");
-            return { id: id || "", title: title || "Untitled", priority: priority || "medium", created: created || "", folder };
-        });
+        const [id, title, priority, created] = line.split("\t");
+        return { id: id || "", title: title || "Untitled", priority: priority || "medium", created: created || "", folder };
+    });
 }
-
 /**
  * Get all tasks across folders for a workspace
  */
-async function getAllTasks(workspace: string): Promise<ListResult[]> {
-    return Promise.all(["Backlog", "Active", "Closed"].map(async folder => ({
+async function getAllTasks(workspace) {
+    return Promise.all(["Backlog", "Active", "Closed"].map(async (folder) => ({
         folder,
         tasks: await listTasks(workspace, folder)
     })));
 }
-
 /**
  * Get full task file content by scanning the directory
  */
-async function getTaskContent(workspace: string, name: string): Promise<string | null> {
+async function getTaskContent(workspace, name) {
     // Build list of folders to search
     for (const folder of ["Backlog", "Active", "Closed"]) {
-        const folderPath = resolve(TASKS_ROOT, workspace, folder);
-        
+        const folderPath = (0, node_path_1.resolve)(TASKS_ROOT, workspace, folder);
         // List files in the folder
-        const { readdir } = await import("node:fs/promises");
-        let files: string[];
+        const { readdir } = await Promise.resolve().then(() => __importStar(require("node:fs/promises")));
+        let files;
         try {
             files = await readdir(folderPath);
-        } catch {
+        }
+        catch {
             continue;
         }
-        
         // Find matching file
         const nameLower = name.toLowerCase().replace(/\s+/g, "-");
         for (const file of files) {
-            if (!file.endsWith(".md")) continue;
-            
+            if (!file.endsWith(".md"))
+                continue;
             // Check if filename starts with the normalized task name
             if (file.toLowerCase().startsWith(nameLower)) {
-                const filePath = resolve(folderPath, file);
+                const filePath = (0, node_path_1.resolve)(folderPath, file);
                 try {
-                    const { readFile } = await import("node:fs/promises");
+                    const { readFile } = await Promise.resolve().then(() => __importStar(require("node:fs/promises")));
                     return await readFile(filePath, "utf8");
-                } catch {
+                }
+                catch {
                     continue;
                 }
             }
@@ -128,49 +135,41 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
     }
     return null;
 }
-
 /**
  * Run a PowerShell script with the given arguments
  * Uses -Command with call operator (&) to properly handle arguments with spaces
  */
-async function runScript(script: string, workspace: string, args: Record<string, string | undefined>): Promise<string> {
-    const scriptPath = resolve(__dirname, "scripts", `${script}.ps1`);
+async function runScript(script, workspace, args) {
+    const scriptPath = (0, node_path_1.resolve)(__dirname, "scripts", `${script}.ps1`);
     const allArgs = { Workspace: workspace, ...args };
-    
     // Build argument list with proper quoting for PowerShell
     // Single quotes in values are escaped as doubled ('')
     const escapedArgs = Object.entries(allArgs)
         .filter(([_, v]) => v !== undefined)
         .map(([k, v]) => `-${k} '${String(v).replace(/'/g, "''")}'`)
         .join(' ');
-    
     // Use call operator (&) with -Command for proper argument handling
     const cmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${scriptPath.replace(/'/g, "''")}' ${escapedArgs}"`;
-    
     const { stdout, stderr } = await execAsync(cmd, { encoding: "utf8" });
-    
     if (stderr && !stdout) {
         throw new Error(stderr);
     }
     return stdout.trim();
 }
-
 /**
  * Find a task by name prefix (fuzzy match)
  */
-async function findTask(workspace: string, name: string): Promise<TaskInfo | null> {
+async function findTask(workspace, name) {
     const allTasks = await getAllTasks(workspace);
     const nameLower = name.toLowerCase();
-    
     for (const result of allTasks) {
         for (const task of result.tasks) {
-            if (task.title.toLowerCase().startsWith(nameLower) || 
+            if (task.title.toLowerCase().startsWith(nameLower) ||
                 task.title.toLowerCase().replace(/\s+/g, "-").startsWith(nameLower)) {
                 return task;
             }
         }
     }
-    
     // Partial match
     for (const result of allTasks) {
         for (const task of result.tasks) {
@@ -179,18 +178,15 @@ async function findTask(workspace: string, name: string): Promise<TaskInfo | nul
             }
         }
     }
-    
     return null;
 }
-
 /**
  * Find all tasks matching a name (for disambiguation)
  */
-async function findAllMatching(workspace: string, name: string): Promise<TaskInfo[]> {
+async function findAllMatching(workspace, name) {
     const allTasks = await getAllTasks(workspace);
     const nameLower = name.toLowerCase();
-    const matches: TaskInfo[] = [];
-    
+    const matches = [];
     for (const result of allTasks) {
         for (const task of result.tasks) {
             const normalized = task.title.toLowerCase().replace(/\s+/g, "-");
@@ -199,65 +195,57 @@ async function findAllMatching(workspace: string, name: string): Promise<TaskInf
             }
         }
     }
-    
     return matches;
 }
-
-export default function (pi: ExtensionAPI) {
+function default_1(pi) {
     // Register task message renderer
     registerTaskRenderer(pi);
-    
     // Session start: notify about active tasks
     pi.on("session_start", async (_event, ctx) => {
         const workspace = getWorkspaceName(ctx.cwd);
         const activeTasks = (await listTasks(workspace, "Active"));
-        
         if (activeTasks.length === 0) {
             // No active tasks - check backlog
             const backlogTasks = (await listTasks(workspace, "Backlog"));
             if (backlogTasks.length > 0) {
                 ctx.ui.notify(`You have ${backlogTasks.length} task(s) in Backlog. Use /tasks to view.`, "info");
             }
-        } else if (activeTasks.length === 1) {
+        }
+        else if (activeTasks.length === 1) {
             ctx.ui.notify(`Active task: "${activeTasks[0].title}"`, "info");
-        } else {
+        }
+        else {
             const titles = activeTasks.map(t => `"${t.title}"`).join(", ");
             ctx.ui.notify(`${activeTasks.length} active tasks: ${titles}`, "info");
             ctx.ui.confirm("Multiple Active", "Would you like to manage active tasks?");
         }
     });
-
     // Permission gate: block writes to tasks folder, allow reads
     pi.on("tool_call", async (event, ctx) => {
         const toolName = event.toolName;
-        
         // Only block write/edit/bash to tasks folder, allow read
         if (["write", "edit", "bash"].includes(toolName)) {
-            let path: string | undefined;
-            
+            let path;
             if (toolName === "bash" && "command" in event.input) {
                 path = event.input.command;
-            } else if ("path" in event.input) {
+            }
+            else if ("path" in event.input) {
                 path = event.input.path;
             }
-            
             if (path) {
-                const resolved = resolve(ctx.cwd, path);
+                const resolved = (0, node_path_1.resolve)(ctx.cwd, path);
                 const workspace = getWorkspaceName(ctx.cwd);
                 const workspaceTaskDir = `${TASKS_ROOT}/${workspace}`;
                 if (resolved.startsWith(TASKS_ROOT) || resolved.replace(/\\/g, "/").startsWith(TASKS_ROOT.replace(/\\/g, "/"))) {
-                    const ok = await ctx.ui.confirm(
-                        "Task Access",
-                        `Block attempt to access tasks folder directly. Use task tools instead?`
-                    );
-                    if (!ok) return;
+                    const ok = await ctx.ui.confirm("Task Access", `Block attempt to access tasks folder directly. Use task tools instead?`);
+                    if (!ok)
+                        return;
                     ctx.ui.notify("Use task tools (/tasks, /task) for task management", "info");
                     return { block: true, reason: "Tasks must be managed via task tools" };
                 }
             }
         }
     });
-
     // Register task tool
     pi.registerTool({
         name: "tasks",
@@ -265,14 +253,13 @@ export default function (pi: ExtensionAPI) {
         description: "Manage tasks. Actions: list (show all), move (change folder), append (add content), delete, rename, search (find by name)",
         promptSnippet: "Manage project tasks via task tools",
         promptGuidelines: ["Use task tools when asked to work with tasks, list tasks, or assign work"],
-        parameters: Type.Object({
-            action: StringEnum(["list", "move", "append", "delete", "rename", "search", "get"] as const),
-            name: Type.Optional(Type.String({ description: "Task name (partial match supported)" })),
-            folder: Type.Optional(Type.String({ description: "Target folder: Backlog, Active, Closed" })),
-            content: Type.Optional(Type.String({ description: "Content to append to task (for append action)" })),
-            newTitle: Type.Optional(Type.String({ description: "New title (for rename action)" })),
+        parameters: typebox_1.Type.Object({
+            action: (0, pi_ai_1.StringEnum)(["list", "move", "append", "delete", "rename", "search", "get"]),
+            name: typebox_1.Type.Optional(typebox_1.Type.String({ description: "Task name (partial match supported)" })),
+            folder: typebox_1.Type.Optional(typebox_1.Type.String({ description: "Target folder: Backlog, Active, Closed" })),
+            content: typebox_1.Type.Optional(typebox_1.Type.String({ description: "Content to append to task (for append action)" })),
+            newTitle: typebox_1.Type.Optional(typebox_1.Type.String({ description: "New title (for rename action)" })),
         }),
-
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             try {
@@ -293,7 +280,6 @@ export default function (pi: ExtensionAPI) {
                             details: { action: "list", tasks: await getAllTasks(workspace) }
                         };
                     }
-
                     case "move": {
                         if (!params.name || !params.folder) {
                             return {
@@ -301,17 +287,13 @@ export default function (pi: ExtensionAPI) {
                                 details: { error: "missing parameters" }
                             };
                         }
-
                         // Check if moving to Active and there's already an active task
                         if (params.folder === "Active") {
                             const activeTasks = await listTasks(workspace, "Active");
                             if (activeTasks.length > 0) {
                                 const current = await findTask(workspace, params.name);
                                 if (!current || current.folder !== "Active") {
-                                    const proceed = await ctx.ui.confirm(
-                                        "Active Task Exists",
-                                        `Move "${activeTasks[0].title}" to Backlog and set "${params.name}" to Active?`
-                                    );
+                                    const proceed = await ctx.ui.confirm("Active Task Exists", `Move "${activeTasks[0].title}" to Backlog and set "${params.name}" to Active?`);
                                     if (!proceed) {
                                         return {
                                             content: [{ type: "text", text: "Cancelled: keeping current active task" }],
@@ -323,14 +305,12 @@ export default function (pi: ExtensionAPI) {
                                 }
                             }
                         }
-
                         const result = await runScript("move-task", workspace, { Name: params.name, NewFolder: params.folder });
                         return {
                             content: [{ type: "text", text: `Moved "${params.name}" to ${params.folder}` }],
                             details: { action: "move", result }
                         };
                     }
-
                     case "append": {
                         if (!params.name || !params.content) {
                             return {
@@ -344,7 +324,6 @@ export default function (pi: ExtensionAPI) {
                             details: { action: "append" }
                         };
                     }
-
                     case "delete": {
                         if (!params.name) {
                             return {
@@ -358,7 +337,6 @@ export default function (pi: ExtensionAPI) {
                             details: { action: "delete", folder }
                         };
                     }
-
                     case "rename": {
                         if (!params.name || !params.newTitle) {
                             return {
@@ -372,7 +350,6 @@ export default function (pi: ExtensionAPI) {
                             details: { action: "rename", folder }
                         };
                     }
-
                     case "search": {
                         if (!params.name) {
                             return {
@@ -392,7 +369,6 @@ export default function (pi: ExtensionAPI) {
                             details: { action: "search", found: true, task }
                         };
                     }
-
                     case "get": {
                         if (!params.name) {
                             return {
@@ -413,14 +389,14 @@ export default function (pi: ExtensionAPI) {
                             details: { action: "get", task }
                         };
                     }
-
                     default:
                         return {
                             content: [{ type: "text", text: `Unknown action: ${params.action}` }],
                             details: { error: "unknown action" }
                         };
                 }
-            } catch (error) {
+            }
+            catch (error) {
                 return {
                     content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
                     details: { error: String(error) }
@@ -428,7 +404,6 @@ export default function (pi: ExtensionAPI) {
             }
         },
     });
-
     // Register /tasks command - list all tasks
     pi.registerCommand("tasks", {
         description: "List all tasks by folder",
@@ -448,11 +423,9 @@ export default function (pi: ExtensionAPI) {
                 ctx.ui.notify(output || "No tasks", "info");
                 return;
             }
-
             // Interactive picker
             const allTasks = await getAllTasks(workspace);
-            const items: { value: string; label: string }[] = [];
-            
+            const items = [];
             for (const result of allTasks) {
                 for (const task of result.tasks) {
                     items.push({
@@ -461,18 +434,15 @@ export default function (pi: ExtensionAPI) {
                     });
                 }
             }
-
             if (items.length === 0) {
                 ctx.ui.notify("No tasks found", "info");
                 return;
             }
-
             const choice = await ctx.ui.select("Tasks", items.map(i => i.label));
             if (!choice) {
                 ctx.ui.notify("Cancelled", "info");
                 return;
             }
-
             // Find selected task and output its content
             const selected = items.find(i => i.label === choice);
             if (selected) {
@@ -486,43 +456,37 @@ export default function (pi: ExtensionAPI) {
                         display: true,
                         details: { name: taskName }
                     }, "steer");
-                } else {
+                }
+                else {
                     ctx.ui.notify(`Could not read task "${taskName}"`, "error");
                 }
             }
         },
     });
-
     // Register /task command - assign a task to Active
     pi.registerCommand("task", {
         description: "Assign a task to Active (use /task <name>)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
-            
             if (!args) {
                 // Show active task
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length > 0) {
                     ctx.ui.notify(`Active: "${activeTasks[0].title}"`, "info");
-                } else {
+                }
+                else {
                     ctx.ui.notify("No active task. Use /task <name> to assign one.", "info");
                 }
                 return;
             }
-
             // Find tasks matching the input
             const matches = await findAllMatching(workspace, args);
-            
             // Check for exact match (case-insensitive, normalized)
-            const exactMatch = matches.find(m => 
-                m.title.toLowerCase() === args.toLowerCase() ||
-                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
-            );
-            
+            const exactMatch = matches.find(m => m.title.toLowerCase() === args.toLowerCase() ||
+                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-"));
             if (exactMatch) {
                 // Exact match found - select directly
                 const title = exactMatch.title;
-                
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length > 0) {
@@ -532,31 +496,26 @@ export default function (pi: ExtensionAPI) {
                 ctx.ui.notify(`Now active: "${title}"`, "info");
                 return;
             }
-            
             if (matches.length === 0) {
                 ctx.ui.notify(`No task found matching "${args}". Use /newtask to create one.`, "error");
                 return;
             }
-            
             // No exact match - show disambiguation list
-            const items: { value: string; label: string }[] = [];
+            const items = [];
             for (const task of matches) {
                 items.push({
                     value: task.title,
                     label: `[${task.folder}] ${task.title}`
                 });
             }
-
             const choice = await ctx.ui.select(`${matches.length} tasks matching "${args}":`, items.map(i => i.label));
             if (!choice) {
                 ctx.ui.notify("Cancelled", "info");
                 return;
             }
-
             const selected = items.find((_, i) => items[i].label === choice);
             if (selected) {
                 const title = selected.value;
-                
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length > 0) {
@@ -567,7 +526,6 @@ export default function (pi: ExtensionAPI) {
             }
         },
     });
-
     // Register /newtask command - create a new task
     pi.registerCommand("newtask", {
         description: "Create a new task (use /newtask <title> [--priority=high])",
@@ -577,7 +535,6 @@ export default function (pi: ExtensionAPI) {
                 ctx.ui.notify("Usage: /newtask <title> [--priority=low|medium|high|critical]", "info");
                 return;
             }
-
             // Parse priority from args if present
             let title = args;
             let priority = "medium";
@@ -586,7 +543,6 @@ export default function (pi: ExtensionAPI) {
                 priority = priorityMatch[1];
                 title = args.replace(/--priority=\w+\s*/, "");
             }
-
             const id = await runScript("create-task", workspace, { Title: title, Priority: priority });
             ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "success");
         },

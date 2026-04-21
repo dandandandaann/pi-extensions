@@ -28,8 +28,7 @@ if ($NewFolder -and $NewFolder -eq $Found) {
 }
 $NewDir = "$TasksRoot/$NewFolder"
 if (-not (Test-Path $NewDir)) {
-    Write-Error "Folder '$NewFolder' not found"
-    exit 1
+    New-Item -ItemType Directory -Path $NewDir -Force | Out-Null
 }
 $Content = Get-Content $OldPath -Raw
 $FileName = Split-Path $OldPath -Leaf

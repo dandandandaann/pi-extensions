@@ -1,0 +1,21 @@
+{
+  "name": "task-manager",
+  "version": "1.0.0",
+  "description": "Manages project tasks via MD files with PowerShell CRUD scripts.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.68.0",
+    "@mariozechner/pi-coding-agent": "^0.68.0",
+    "@mariozechner/pi-tui": "^0.68.0",
+    "@sinclair/typebox": "^0.34.49",
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
+  }
+}

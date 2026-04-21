@@ -7,8 +7,12 @@ param(
 $TasksRoot = "$HOME/.pi/tasks/$Workspace"
 $NameSafe = $Name -replace '[^\w\-]', '-' -replace '-+', '-'
 foreach ($folder in @("Backlog", "Active", "Closed")) {
+    $Dir = "$TasksRoot/$folder"
+    if (-not (Test-Path $Dir)) {
+        New-Item -ItemType Directory -Path $Dir -Force | Out-Null
+    }
     $Pattern = "$NameSafe*.md"
-    $Files = Get-ChildItem -Path "$TasksRoot/$folder" -Filter $Pattern -ErrorAction SilentlyContinue
+    $Files = Get-ChildItem -Path $Dir -Filter $Pattern -ErrorAction SilentlyContinue
     if ($Files) {
         Remove-Item -Path $Files[0].FullName -Force
         Write-Output $folder

@@ -22,6 +22,11 @@ if (-not $FilePath) {
     Write-Error "Task '$Name' not found"
     exit 1
 }
+# Ensure Backlog folder exists for new tasks
+$BacklogDir = "$TasksRoot/Backlog"
+if (-not (Test-Path $BacklogDir)) {
+    New-Item -ItemType Directory -Path $BacklogDir -Force | Out-Null
+}
 $Content = Get-Content $FilePath -Raw
 if ($NewTitle) {
     $Content = $Content -replace '(?s)^---\n.*?\ntitle:\s*.+?\n', "---\n`$1`ntitle: $NewTitle`n"

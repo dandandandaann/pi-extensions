@@ -22,6 +22,11 @@ if (-not $FilePath) {
     Write-Error "Task '$Name' not found"
     exit 1
 }
+# Ensure Backlog folder exists
+$BacklogDir = "$TasksRoot/Backlog"
+if (-not (Test-Path $BacklogDir)) {
+    New-Item -ItemType Directory -Path $BacklogDir -Force | Out-Null
+}
 if ($Content) {
     Add-Content -Path $FilePath -Value "$Content`n" -Encoding UTF8
 }
