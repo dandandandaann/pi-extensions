@@ -25,7 +25,6 @@ import type {
 	ToolCallEvent,
 	BeforeAgentStartEvent,
 	BeforeProviderRequestEvent,
-	AgentStartEvent,
 } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -97,10 +96,6 @@ const DEFAULT_SYSTEM_PROMPT_HEADER = `# Agent Configuration: {agentName}
 ---
 
 `;
-
-const DEFAULT_CAPABILITIES = "You have access to all enabled tools as listed in your instructions.";
-
-const DEFAULT_RESTRICTIONS = "Follow the agent configuration above. Only use tools that are explicitly enabled.";
 
 // ============================================================================
 // Helper Functions
@@ -270,23 +265,6 @@ function getEnabledToolNames(agent: AgentConfig): string[] {
 		.map(([tool]) => tool);
 }
 
-// Helper to find model by provider+model or by model name with provider verification
-function findModelWithProvider(models: any[], provider: string, model: string): any {
-	// First try exact provider+model match
-	let found = models?.find((m: any) => m.id === model && m.provider === provider);
-	
-	// If not found, try finding by model name suffix and verify provider
-	if (!found) {
-		found = models?.find((m: any) => m.id.endsWith(`/${model}`));
-		if (found && found.provider !== provider) {
-			console.log(`[agent-xpto] findModelWithProvider: Found ${found.id} but provider ${found.provider} != ${provider}, ignoring`);
-			found = null;
-		}
-	}
-	
-	return found;
-}
-
 // ============================================================================
 // Extension Implementation
 // ============================================================================
@@ -301,7 +279,6 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		rememberLastAgent: true,
 		cycleWraps: true,
 	};
-	let lastAgentId: string | null = null;
 
 	// ============================================================================
 	// Agent Management Functions
@@ -315,7 +292,6 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		const index = agents.findIndex((a) => a.id === agentId);
 		if (index >= 0) {
 			currentAgentIndex = index;
-			lastAgentId = agentId;
 			return getCurrentAgent();
 		}
 		return null;
@@ -323,7 +299,6 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 	function cycleAgent(): AgentConfig {
 		currentAgentIndex = (currentAgentIndex + 1) % agents.length;
-		lastAgentId = getCurrentAgent().id;
 		return getCurrentAgent();
 	}
 
@@ -345,7 +320,6 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		// Set initial agent
 		const defaultIndex = agents.findIndex((a) => a.id === config.defaultAgent);
 		currentAgentIndex = defaultIndex >= 0 ? defaultIndex : 0;
-		lastAgentId = getCurrentAgent().id;
 	}
 
 	// ============================================================================
@@ -359,13 +333,13 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		const agent = getCurrentAgent();
 
 		if (agent.model) {
-			const models = (ctx.modelRegistry as any).models;
-			const model = findModelWithProvider(models, agent.model.provider, agent.model.model);
-			
+			const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
 			if (model && ctx.modelRegistry.hasConfiguredAuth(model)) {
 				await pi.setModel(model);
 			} else if (model) {
 				ctx.ui.notify(`Agent "${agent.name}" model has no API key`, "warning");
+			} else {
+				ctx.ui.notify(`Agent "${agent.name}" model not found: ${agent.model.provider}/${agent.model.model}`, "warning");
 			}
 		}
 		
@@ -383,7 +357,6 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		"before_agent_start",
 		async (event: BeforeAgentStartEvent, ctx: ExtensionContext) => {
 			const agent = getCurrentAgent();
-			const currentModel = ctx.model;
 
 			const modifications: {
 				systemPrompt?: string;
@@ -398,15 +371,9 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 			// Enforce agent model
 			if (agent.model) {
-				const models = (ctx.modelRegistry as any).models;
-				const expectedModel = findModelWithProvider(models, agent.model.provider, agent.model.model);
-
-				if (expectedModel && ctx.modelRegistry.hasConfiguredAuth(expectedModel)) {
-					if (currentModel?.id !== expectedModel.id) {
-						await pi.setModel(expectedModel);
-					}
-				} else if (expectedModel) {
-					ctx.ui.notify(`Agent "${agent.name}" model has no API key`, "warning");
+				const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
+				if (model) {
+					await pi.setModel(model);
 				}
 			}
 
@@ -417,16 +384,11 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 	// Enforce model before provider request
 	pi.on("before_provider_request", async (_event: BeforeProviderRequestEvent, ctx: ExtensionContext) => {
 		const agent = getCurrentAgent();
-		const currentModel = ctx.model;
 
 		if (agent.model) {
-			const models = (ctx.modelRegistry as any).models;
-			const expectedModel = findModelWithProvider(models, agent.model.provider, agent.model.model);
-
-			if (expectedModel && ctx.modelRegistry.hasConfiguredAuth(expectedModel)) {
-				if (currentModel?.id !== expectedModel.id) {
-					await pi.setModel(expectedModel);
-				}
+			const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
+			if (model) {
+				await pi.setModel(model);
 			}
 		}
 
@@ -434,17 +396,13 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 	});
 
 	// Enforce model on every turn
-	pi.on("turn_start", async (_event, ctx: ExtensionContext) => {
+	pi.on("turn_start", async (_event: any, ctx: ExtensionContext) => {
 		const agent = getCurrentAgent();
 
 		if (agent.model) {
-			const models = (ctx.modelRegistry as any).models;
-			const expectedModel = findModelWithProvider(models, agent.model.provider, agent.model.model);
-
-			if (expectedModel && ctx.modelRegistry.hasConfiguredAuth(expectedModel)) {
-				if (ctx.model?.id !== expectedModel.id) {
-					await pi.setModel(expectedModel);
-				}
+			const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
+			if (model) {
+				await pi.setModel(model);
 			}
 		}
 
@@ -519,8 +477,7 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 				// Trigger model/thinking level change
 				if (nextAgent.model) {
-					const models = (ctx.modelRegistry as any).models;
-					const model = findModelWithProvider(models, nextAgent.model.provider, nextAgent.model.model);
+					const model = ctx.modelRegistry.find(nextAgent.model.provider, nextAgent.model.model);
 					if (model) {
 						await pi.setModel(model);
 					}
@@ -545,8 +502,7 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 						// Apply model and thinking level
 						if (newAgent.model) {
-							const models = (ctx.modelRegistry as any).models;
-							const model = findModelWithProvider(models, newAgent.model.provider, newAgent.model.model);
+							const model = ctx.modelRegistry.find(newAgent.model.provider, newAgent.model.model);
 							if (model) {
 								await pi.setModel(model);
 							}
@@ -606,10 +562,9 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 			}
 			ctx.ui.notify(`Agent: ${nextAgent.name}`, "info");
 
-			// Apply model and thinking level
+				// Apply model and thinking level
 			if (nextAgent.model) {
-				const models = (ctx.modelRegistry as any).models;
-				const model = findModelWithProvider(models, nextAgent.model.provider, nextAgent.model.model);
+				const model = ctx.modelRegistry.find(nextAgent.model.provider, nextAgent.model.model);
 				if (model) {
 					await pi.setModel(model);
 				}
@@ -649,8 +604,7 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 					// Apply model and thinking level
 					if (agent.model) {
-						const models = (ctx.modelRegistry as any).models;
-						const model = findModelWithProvider(models, agent.model.provider, agent.model.model);
+						const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
 						if (model) {
 							await pi.setModel(model);
 						}
