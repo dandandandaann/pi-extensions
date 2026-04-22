@@ -130,6 +130,35 @@ async function getOpenTasks(workspace: string): Promise<ListResult[]> {
 }
 
 /**
+ * Find all tasks matching a name (for disambiguation)
+ */
+async function findAllMatching(workspace: string, name: string): Promise<TaskInfo[]> {
+    const allTasks = await getAllTasks(workspace);
+    const normalizedSearch = normalizeTaskName(name);
+    const matches: TaskInfo[] = [];
+    
+    for (const result of allTasks) {
+        for (const task of result.tasks) {
+            const normalizedTitle = normalizeTaskName(task.title);
+            if (normalizedTitle.startsWith(normalizedSearch) || normalizedTitle.includes(normalizedSearch)) {
+                matches.push(task);
+            }
+        }
+    }
+    
+    return matches;
+}
+
+/**
+ * Find exact match (normalized) or return null
+ */
+async function findExactMatch(workspace: string, name: string): Promise<TaskInfo | null> {
+    const matches = await findAllMatching(workspace, name);
+    const normalizedSearch = normalizeTaskName(name);
+    return matches.find(m => normalizeTaskName(m.title) === normalizedSearch) || null;
+}
+
+/**
  * Get full task file content by scanning the directory
  */
 async function getTaskContent(workspace: string, name: string): Promise<string | null> {
@@ -147,12 +176,13 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
         }
         
         // Find matching file
-        const nameLower = name.toLowerCase().replace(/\s+/g, "-");
+        const normalizedName = normalizeTaskName(name);
         for (const file of files) {
             if (!file.endsWith(".md")) continue;
             
             // Check if filename starts with the normalized task name
-            if (file.toLowerCase().startsWith(nameLower)) {
+            const fileNameLower = file.toLowerCase();
+            if (fileNameLower.startsWith(normalizedName) || fileNameLower.includes(normalizedName)) {
                 const filePath = resolve(folderPath, file);
                 try {
                     const { readFile } = await import("node:fs/promises");
@@ -210,12 +240,12 @@ async function runScript(script: string, workspace: string, args: Record<string,
  */
 async function findTask(workspace: string, name: string): Promise<TaskInfo | null> {
     const allTasks = await getAllTasks(workspace);
-    const nameLower = name.toLowerCase();
+    const normalizedSearch = normalizeTaskName(name);
     
     for (const result of allTasks) {
         for (const task of result.tasks) {
-            if (task.title.toLowerCase().startsWith(nameLower) || 
-                task.title.toLowerCase().replace(/\s+/g, "-").startsWith(nameLower)) {
+            const normalizedTitle = normalizeTaskName(task.title);
+            if (normalizedTitle.startsWith(normalizedSearch)) {
                 return task;
             }
         }
@@ -224,7 +254,7 @@ async function findTask(workspace: string, name: string): Promise<TaskInfo | nul
     // Partial match
     for (const result of allTasks) {
         for (const task of result.tasks) {
-            if (task.title.toLowerCase().includes(nameLower)) {
+            if (normalizeTaskName(task.title).includes(normalizedSearch)) {
                 return task;
             }
         }
@@ -234,23 +264,10 @@ async function findTask(workspace: string, name: string): Promise<TaskInfo | nul
 }
 
 /**
- * Find all tasks matching a name (for disambiguation)
+ * Normalize a string for task matching: lowercase and replace spaces with dashes
  */
-async function findAllMatching(workspace: string, name: string): Promise<TaskInfo[]> {
-    const allTasks = await getAllTasks(workspace);
-    const nameLower = name.toLowerCase();
-    const matches: TaskInfo[] = [];
-    
-    for (const result of allTasks) {
-        for (const task of result.tasks) {
-            const normalized = task.title.toLowerCase().replace(/\s+/g, "-");
-            if (task.title.toLowerCase().includes(nameLower) || normalized.includes(nameLower)) {
-                matches.push(task);
-            }
-        }
-    }
-    
-    return matches;
+function normalizeTaskName(name: string): string {
+    return name.toLowerCase().replace(/[\s\-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -571,12 +588,7 @@ export default function (pi: ExtensionAPI) {
 
             // Find tasks matching the input
             const matches = await findAllMatching(workspace, args);
-            
-            // Check for exact match (case-insensitive, normalized)
-            const exactMatch = matches.find(m => 
-                m.title.toLowerCase() === args.toLowerCase() ||
-                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
-            );
+            const exactMatch = await findExactMatch(workspace, args);
             
             if (exactMatch) {
                 // Exact match found - select directly
@@ -629,7 +641,7 @@ export default function (pi: ExtensionAPI) {
 
     // Helper to find task file path and open it in default editor
     async function findTaskPath(workspace: string, name: string): Promise<string | null> {
-        const nameSafe = name.toLowerCase().replace(/[^\w\-]/g, "-").replace(/-+/g, "-");
+        const normalizedName = normalizeTaskName(name);
         
         for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
             const folderPath = resolve(TASKS_ROOT, workspace, folder);
@@ -644,7 +656,8 @@ export default function (pi: ExtensionAPI) {
             
             for (const file of files) {
                 if (!file.endsWith(".md")) continue;
-                if (file.toLowerCase().startsWith(nameSafe)) {
+                const fileNameLower = file.toLowerCase();
+                if (fileNameLower.startsWith(normalizedName) || fileNameLower.includes(normalizedName)) {
                     return resolve(folderPath, file);
                 }
             }
@@ -708,12 +721,7 @@ export default function (pi: ExtensionAPI) {
             
             // Find tasks matching the input
             const matches = await findAllMatching(workspace, args);
-            
-            // Check for exact match (case-insensitive, normalized)
-            const exactMatch = matches.find(m => 
-                m.title.toLowerCase() === args.toLowerCase() ||
-                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
-            );
+            const exactMatch = await findExactMatch(workspace, args);
             
             if (exactMatch) {
                 // Exact match found - open directly
@@ -866,10 +874,7 @@ export default function (pi: ExtensionAPI) {
             }
 
             const matches = await findAllMatching(workspace, args);
-            const exactMatch = matches.find(m => 
-                m.title.toLowerCase() === args.toLowerCase() ||
-                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
-            );
+            const exactMatch = await findExactMatch(workspace, args);
             
             if (exactMatch) {
                 await assignTaskToAgent(workspace, exactMatch.title, ctx);
@@ -957,10 +962,7 @@ export default function (pi: ExtensionAPI) {
             const matches = await findAllMatching(workspace, args);
             
             // Check for exact match
-            const exactMatch = matches.find(m => 
-                m.title.toLowerCase() === args.toLowerCase() ||
-                m.title.toLowerCase().replace(/\s+/g, "-") === args.toLowerCase().replace(/\s+/g, "-")
-            );
+            const exactMatch = await findExactMatch(workspace, args);
             
             if (exactMatch) {
                 // Exact match found - process directly

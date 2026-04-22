@@ -270,6 +270,23 @@ function getEnabledToolNames(agent: AgentConfig): string[] {
 		.map(([tool]) => tool);
 }
 
+// Helper to find model by provider+model or by model name with provider verification
+function findModelWithProvider(models: any[], provider: string, model: string): any {
+	// First try exact provider+model match
+	let found = models?.find((m: any) => m.id === model && m.provider === provider);
+	
+	// If not found, try finding by model name suffix and verify provider
+	if (!found) {
+		found = models?.find((m: any) => m.id.endsWith(`/${model}`));
+		if (found && found.provider !== provider) {
+			console.log(`[agent-xpto] findModelWithProvider: Found ${found.id} but provider ${found.provider} != ${provider}, ignoring`);
+			found = null;
+		}
+	}
+	
+	return found;
+}
+
 // ============================================================================
 // Extension Implementation
 // ============================================================================
@@ -310,10 +327,6 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		return getCurrentAgent();
 	}
 
-	function listAgents(): AgentConfig[] {
-		return agents;
-	}
-
 	// ============================================================================
 	// Initialization
 	// ============================================================================
@@ -346,13 +359,16 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		const agent = getCurrentAgent();
 
 		if (agent.model) {
-			const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
+			const models = (ctx.modelRegistry as any).models;
+			const model = findModelWithProvider(models, agent.model.provider, agent.model.model);
+			
 			if (model && ctx.modelRegistry.hasConfiguredAuth(model)) {
 				await pi.setModel(model);
-			} else if (!ctx.modelRegistry.hasConfiguredAuth(model)) {
-				ctx.ui.notify(`Agent "${agent.name}" model ${agent.model.provider}/${agent.model.model} has no API key`, "warning");
+			} else if (model) {
+				ctx.ui.notify(`Agent "${agent.name}" model has no API key`, "warning");
 			}
 		}
+		
 		if (agent.thinkingLevel) {
 			pi.setThinkingLevel(agent.thinkingLevel);
 		}
@@ -367,6 +383,7 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		"before_agent_start",
 		async (event: BeforeAgentStartEvent, ctx: ExtensionContext) => {
 			const agent = getCurrentAgent();
+			const currentModel = ctx.model;
 
 			const modifications: {
 				systemPrompt?: string;
@@ -381,19 +398,15 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 			// Enforce agent model
 			if (agent.model) {
-				const expectedModel = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
-				const currentModel = ctx.model;
+				const models = (ctx.modelRegistry as any).models;
+				const expectedModel = findModelWithProvider(models, agent.model.provider, agent.model.model);
 
-				if (expectedModel) {
-					const modelsMatch = currentModel && currentModel.id === expectedModel.id;
-
-					if (!modelsMatch) {
-						try {
-							await pi.setModel(expectedModel);
-						} catch {
-							// Model not available - keep current
-						}
+				if (expectedModel && ctx.modelRegistry.hasConfiguredAuth(expectedModel)) {
+					if (currentModel?.id !== expectedModel.id) {
+						await pi.setModel(expectedModel);
 					}
+				} else if (expectedModel) {
+					ctx.ui.notify(`Agent "${agent.name}" model has no API key`, "warning");
 				}
 			}
 
@@ -401,18 +414,17 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		},
 	);
 
-	// Final safety net - enforce model before provider request
+	// Enforce model before provider request
 	pi.on("before_provider_request", async (_event: BeforeProviderRequestEvent, ctx: ExtensionContext) => {
 		const agent = getCurrentAgent();
 		const currentModel = ctx.model;
 
 		if (agent.model) {
-			const expectedModel = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
+			const models = (ctx.modelRegistry as any).models;
+			const expectedModel = findModelWithProvider(models, agent.model.provider, agent.model.model);
 
-			if (expectedModel) {
-				const modelsMatch = currentModel && currentModel.id === expectedModel.id;
-
-				if (!modelsMatch) {
+			if (expectedModel && ctx.modelRegistry.hasConfiguredAuth(expectedModel)) {
+				if (currentModel?.id !== expectedModel.id) {
 					await pi.setModel(expectedModel);
 				}
 			}
@@ -426,23 +438,16 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 		const agent = getCurrentAgent();
 
 		if (agent.model) {
-			const expectedModel = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
-			const currentModel = ctx.model;
+			const models = (ctx.modelRegistry as any).models;
+			const expectedModel = findModelWithProvider(models, agent.model.provider, agent.model.model);
 
-			if (expectedModel) {
-				const modelsMatch = currentModel && currentModel.id === expectedModel.id;
-
-				if (!modelsMatch) {
-					try {
-						await pi.setModel(expectedModel);
-					} catch {
-						// Model not available - keep current
-					}
+			if (expectedModel && ctx.modelRegistry.hasConfiguredAuth(expectedModel)) {
+				if (ctx.model?.id !== expectedModel.id) {
+					await pi.setModel(expectedModel);
 				}
 			}
 		}
 
-		// Set thinking level on every turn
 		if (agent.thinkingLevel) {
 			pi.setThinkingLevel(agent.thinkingLevel);
 		}
@@ -514,7 +519,8 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 				// Trigger model/thinking level change
 				if (nextAgent.model) {
-					const model = ctx.modelRegistry.find(nextAgent.model.provider, nextAgent.model.model);
+					const models = (ctx.modelRegistry as any).models;
+					const model = findModelWithProvider(models, nextAgent.model.provider, nextAgent.model.model);
 					if (model) {
 						await pi.setModel(model);
 					}
@@ -539,7 +545,8 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 						// Apply model and thinking level
 						if (newAgent.model) {
-							const model = ctx.modelRegistry.find(newAgent.model.provider, newAgent.model.model);
+							const models = (ctx.modelRegistry as any).models;
+							const model = findModelWithProvider(models, newAgent.model.provider, newAgent.model.model);
 							if (model) {
 								await pi.setModel(model);
 							}
@@ -601,7 +608,8 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 			// Apply model and thinking level
 			if (nextAgent.model) {
-				const model = ctx.modelRegistry.find(nextAgent.model.provider, nextAgent.model.model);
+				const models = (ctx.modelRegistry as any).models;
+				const model = findModelWithProvider(models, nextAgent.model.provider, nextAgent.model.model);
 				if (model) {
 					await pi.setModel(model);
 				}
@@ -641,7 +649,8 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 					// Apply model and thinking level
 					if (agent.model) {
-						const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
+						const models = (ctx.modelRegistry as any).models;
+						const model = findModelWithProvider(models, agent.model.provider, agent.model.model);
 						if (model) {
 							await pi.setModel(model);
 						}
