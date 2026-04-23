@@ -4,15 +4,16 @@
  * Prompts for permission when bash/write/edit commands target paths
  * outside the current working directory.
  *
- * Configure allowed escape patterns via settings.json:
+ * Commands:
+ *   /sandbox status          - Show current mode and status
+ *   /sandbox allow-all       - Allow all operations until next user input
+ *   /sandbox mode-sandbox    - Disable allow-all, return to normal sandbox mode
+ *   /sandbox mode-strict     - Auto-deny ALL security checks (no prompts)
+ *   /sandbox dangerous-patterns - List dangerous patterns being checked
  *
- * {
- *   "workspaceSandbox": {
- *     "allowedDirs": ["~/projects/shared"],
- *     "skipDangerousCheck": false,
- *     "dangerousPatterns": ["rm -rf", "sudo"]
- *   }
- * }
+ * Strict Mode:
+ *   When enabled via /sandbox mode-strict, ALL security checks are automatically
+ *   denied without any UI prompts. Use /sandbox mode-sandbox to disable.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -29,6 +30,9 @@ interface WorkspaceSandboxConfig {
 
 // Track allow-all state (reset on new user input)
 let allowAllUntilInput = false;
+
+// Track strict mode (auto-deny all security checks)
+let strictMode = false;
 
 // Auto-detect extension script folders
 function getExtensionScriptDirs(): string[] {
@@ -252,16 +256,17 @@ export default function (pi: ExtensionAPI) {
     return null;
   }
 
-  // Reset allow-all when user sends new input
+  // Reset allow-all and strict mode when user sends new input
   pi.on("input", async (_event: unknown, _ctx: unknown) => {
     allowAllUntilInput = false;
+    strictMode = false;
   });
 
   // Safe read-only bash commands that don't need path permission checks
   const READ_ONLY_COMMANDS = new Set([
     "ls", "dir", "cat", "find", "grep", "head", "tail", "wc", "stat",
     "type", "more", "less", "xdg-open", "code", "open", "echo", "pwd",
-    "findstr"
+    "findstr", "rg"
   ]);
 
   function isReadOnlyCommand(command: string): boolean {
@@ -274,44 +279,63 @@ export default function (pi: ExtensionAPI) {
 
   // Register /sandbox command for status and manual control
   pi.registerCommand("sandbox", {
-    description: "Toggle workspace sandbox - 'allow' to enable Allow All, 'strict' to disable",
+    description: "Toggle workspace sandbox - 'allow-all' to enable Allow All, 'mode-sandbox' to disable",
     getArgumentCompletions: (prefix: string) => {
-      const opts = ["status", "allow", "strict", "dangerous"];
-      return opts.filter(o => o.startsWith(prefix)).map(o => ({ value: o }));
+      const opts = ["status", "allow-all", "mode-sandbox", "mode-strict", "dangerous-patterns"];
+      return opts.filter(o => o.startsWith(prefix)).map(o => ({ value: o, label: o }));
     },
     handler: async (args: string | undefined, ctx: { ui: { notify: (msg: string, type: string) => void } }) => {
       const cmd = args?.toLowerCase();
       
       if (!cmd || cmd === "status") {
-        const status = allowAllUntilInput ? "🟢 Allow All active" : "🔒 Sandbox active";
-        ctx.ui.notify(`${status} [v${VERSION}] - ${(config.dangerousPatterns || []).length} dangerous patterns`, "info");
+        const strictStatus = strictMode ? "🔴 STRICT" : "🔒";
+        const allowStatus = allowAllUntilInput ? "🟢 Allow All" : "";
+        const statusParts = [strictStatus, allowStatus].filter(Boolean).join(" + ") || "Normal";
+        ctx.ui.notify(`${statusParts} [v${VERSION}] - ${(config.dangerousPatterns || []).length} dangerous patterns`, "info");
         return;
       }
       
-      if (cmd === "allow") {
+      if (cmd === "allow-all") {
         allowAllUntilInput = true;
-        ctx.ui.notify("Allow All activated", "info");
+        strictMode = false;
+        ctx.ui.notify("Allow All activated (strict mode disabled)", "info");
         return;
       }
       
-      if (cmd === "strict") {
+      if (cmd === "mode-sandbox") {
         allowAllUntilInput = false;
-        ctx.ui.notify("Sandbox is now strict", "info");
+        strictMode = false;
+        ctx.ui.notify("Sandbox is now activated in normal mode", "info");
         return;
       }
       
-      if (cmd === "dangerous") {
+      if (cmd === "mode-strict") {
+        strictMode = true;
+        allowAllUntilInput = false;
+        ctx.ui.notify("🔴 Strict mode activated - all security checks auto-denied", "info");
+        return;
+      }
+      
+      if (cmd === "dangerous-patterns") {
         const patterns = (config.dangerousPatterns || []).join(", ");
         ctx.ui.notify(`Dangerous patterns: ${patterns}`, "info");
         return;
       }
       
-      ctx.ui.notify("Usage: /sandbox [status|allow|strict|dangerous]", "info");
+      ctx.ui.notify("Usage: /sandbox [status|allow-all|mode-sandbox|mode-strict|dangerous-patterns]", "info");
     },
   });
 
   // --- Main Handler ---
   pi.on("tool_call", async (event: { toolName: string; input: Record<string, unknown> }, ctx: any) => {
+    // If strict mode is active, auto-deny all security checks
+    if (strictMode) {
+      return {
+        block: true,
+        reason: "Blocked by the User: Strict mode active",
+      };
+    }
+
     // If allow-all is active, skip checks
     if (allowAllUntilInput) {
       return undefined;
