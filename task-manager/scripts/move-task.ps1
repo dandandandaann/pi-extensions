@@ -24,7 +24,7 @@ if (-not $OldPath) {
     exit 1
 }
 if ($NewFolder -eq "Closed" -and -not $AllowClosed) {
-    Write-Error "Use /task-complete to move tasks to Closed"
+    Write-Error "Use submit-qa script to move the task to user-qa instead of directly moving it to Closed."
     exit 1
 }
 $NewDir = "$TasksRoot/$NewFolder"

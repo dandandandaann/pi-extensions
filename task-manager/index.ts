@@ -264,10 +264,10 @@ async function findTask(workspace: string, name: string): Promise<TaskInfo | nul
 }
 
 /**
- * Normalize a string for task matching: lowercase and replace spaces with dashes
+ * Normalize a string for task matching: lowercase and replace any sequence of non-alphanumeric chars with single dash
  */
 function normalizeTaskName(name: string): string {
-    return name.toLowerCase().replace(/[\s\-]+/g, "-").replace(/^-+|-+$/g, "");
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 export default function (pi: ExtensionAPI) {
