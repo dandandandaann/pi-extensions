@@ -73,6 +73,7 @@ const TasksParamsSchema = Type.Object({
         Type.Literal("rename"),
         Type.Literal("search"),
         Type.Literal("get"),
+        Type.Literal("submit-qa"),
     ]),
     name: Type.Optional(Type.String({ description: "Task name (partial match supported)" })),
     folder: Type.Optional(Type.String({ description: "Target folder: Backlog, Active, Closed" })),
@@ -85,8 +86,11 @@ const TasksParamsSchema = Type.Object({
         Type.Literal("high"),
         Type.Literal("critical")
     ], { description: "Task priority (for create action), defaults to medium" })),
+    message: Type.Optional(Type.String({ description: "QA submission message (for submit-qa action)" })),
 });
 type TasksParams = Static<typeof TasksParamsSchema>;
+
+
 
 /**
  * Parse PowerShell output into structured task data
@@ -327,7 +331,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
         name: "tasks",
         label: "Tasks",
-        description: "Manage tasks. Actions: list (show all), create (new task), move (change folder), append (add content), delete, rename, search (find by name)",
+        description: "Manage tasks. Actions: list (show all), create (new task), move (change folder), append (add content), delete, rename, search (find by name), submit-qa (submit active task to QA)",
         promptSnippet: "Manage project tasks via task tools",
         promptGuidelines: ["Use task tools when asked to work with tasks, list tasks, or assign work"],
         parameters: TasksParamsSchema as any,
@@ -486,6 +490,28 @@ export default function (pi: ExtensionAPI) {
                         return {
                             content: [{ type: "text", text: output }],
                             details: { action: "get", task }
+                        };
+                    }
+
+                    case "submit-qa": {
+                        const activeTasks = await listTasks(workspace, "Active");
+                        if (activeTasks.length === 0) {
+                            return {
+                                content: [{ type: "text", text: "No active task to submit to QA" }],
+                                details: { error: "no active task" }
+                            };
+                        }
+                        if (activeTasks.length > 1) {
+                            return {
+                                content: [{ type: "text", text: "Multiple active tasks. Please specify which task to submit." }],
+                                details: { error: "multiple active tasks" }
+                            };
+                        }
+                        const taskName = activeTasks[0].title;
+                        const result = await runScript("submit-to-qa", workspace, { Name: taskName, Context: p.message || "" });
+                        return {
+                            content: [{ type: "text", text: `Submitted "${taskName}" to QA: ${p.message || ""}` }],
+                            details: { action: "submit-qa", task: taskName, result }
                         };
                     }
 
@@ -915,7 +941,7 @@ export default function (pi: ExtensionAPI) {
         const content = await getTaskContent(workspace, title);
         if (content) {
             // Send task content as a user message to trigger the agent
-            pi.sendUserMessage(`Work on the following task:\n\n${content}\n\n---\n\nWhen finished, use \`/submit-qa <commit message>\` to submit to QA.`, { deliverAs: "steer" });
+            pi.sendUserMessage(`Work on the following task:\n\n${content}\n\n---\n\nWhen finished, use \`submit-qa\` with a message to submit it to QA.`, { deliverAs: "steer" });
         }
         
         ctx.ui.notify(`Now working on: "${title}"`, "info");
@@ -1011,33 +1037,7 @@ export default function (pi: ExtensionAPI) {
                 await runScript("append-task", workspace, { Name: title, Content: qaNote });
                 
                 ctx.ui.notify(`Moved "${title}" to Closed`, "info");
-            }
-        },
-    });
-
-    // Register /submit-qa command - submit active task to QA
-    pi.registerCommand("submit-qa", {
-        description: "Submit active task to QA (use /submit-qa <context/commit message>)",
-        async handler(args, ctx) {
-            const workspace = getWorkspaceName(ctx.cwd);
-            if (!args) {
-                ctx.ui.notify("Usage: /submit-qa <context explaining changes>", "info");
-                return;
-            }
-
-            const activeTasks = await listTasks(workspace, "Active");
-            if (activeTasks.length === 0) {
-                ctx.ui.notify("No active task to submit", "error");
-                return;
-            }
-
-            const title = activeTasks[0].title;
-            try {
-                await runScript("submit-to-qa", workspace, { Name: title, Context: args });
-                ctx.ui.notify(`Submitted "${title}" to QA`, "info");
-            } catch (error) {
-                ctx.ui.notify(`Error: ${error instanceof Error ? error.message : String(error)}`, "error");
-            }
-        },
+        }
+    }
     });
 }

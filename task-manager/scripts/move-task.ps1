@@ -31,7 +31,6 @@ $NewDir = "$TasksRoot/$NewFolder"
 if (-not (Test-Path $NewDir)) {
     New-Item -ItemType Directory -Path $NewDir -Force | Out-Null
 }
-$Content = Get-Content $OldPath -Raw
 $FileName = Split-Path $OldPath -Leaf
 $NewPath = Join-Path $NewDir $FileName
 Move-Item -Path $OldPath -Destination $NewPath -Force
