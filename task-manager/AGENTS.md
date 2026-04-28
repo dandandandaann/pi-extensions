@@ -82,6 +82,8 @@ tasks(action="search", name="auth")
 |---------|-------------|
 | `/tasks` | List all tasks with interactive picker |
 | `/task <name>` | Assign task to Active (auto-switches) |
+| `/task-work <name>` | Assign task and instruct agent to work on it |
+| `/task-work all` | Process all Backlog tasks sequentially |
 | `/task-create <title> [--priority=high]` | Create new task in Backlog |
 | `/task-new <title> [--priority=high]` | Create new task in Backlog (alias) |
 | `/task-open <name>` | Open task file in default editor |

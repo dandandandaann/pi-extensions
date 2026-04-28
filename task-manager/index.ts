@@ -275,6 +275,11 @@ function normalizeTaskName(name: string): string {
 }
 
 export default function (pi: ExtensionAPI) {
+    // Batch mode state for /task-work all
+    let batchMode = false;
+    let batchTasks: TaskInfo[] = [];
+    let batchIndex = 0;
+
     // Register task message renderer
     registerTaskRenderer(pi);
     
@@ -879,15 +884,70 @@ export default function (pi: ExtensionAPI) {
 
     // Register /task-work command - assign task and instruct agent to work on it
     pi.registerCommand("task-work", {
-        description: "Assign a task to Active and instruct agent to work on it (use /task-work <name>)",
+        description: "Assign a task to Active and instruct agent to work on it (use /task-work <name> or /task-work all)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             
-            // If no args, check if there's exactly one active task
+            // Check for "all" argument
+            if (args === "all") {
+                const backlogTasks = await listTasks(workspace, "Backlog");
+                
+                if (backlogTasks.length === 0) {
+                    ctx.ui.notify("No tasks in Backlog", "info");
+                    return;
+                }
+                
+                const confirmed = await ctx.ui.confirm(
+                    "Batch Mode",
+                    `Work on ${backlogTasks.length} task(s) from Backlog?`
+                );
+                
+                if (!confirmed) {
+                    ctx.ui.notify("Cancelled", "info");
+                    return;
+                }
+                
+                // Set batch state and start processing
+                batchMode = true;
+                batchTasks = backlogTasks;
+                batchIndex = 0;
+                
+                await processNextBatchTask(workspace, ctx);
+                return;
+            }
+            
+            // If no args, check active tasks or show all tasks
             if (!args) {
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length === 0) {
-                    ctx.ui.notify("No active task. Use /task-work <task-name>", "info");
+                    // No active task - show all tasks like /task-complete does
+                    const openTasks = await getOpenTasks(workspace);
+                    const items: { value: string; label: string }[] = [];
+                    
+                    for (const result of openTasks) {
+                        for (const task of result.tasks) {
+                            items.push({
+                                value: task.title,
+                                label: `[${result.folder}] ${task.title}`
+                            });
+                        }
+                    }
+                    
+                    if (items.length === 0) {
+                        ctx.ui.notify("No tasks found", "info");
+                        return;
+                    }
+                    
+                    const choice = await ctx.ui.select("Select a task to work on:", items.map(i => i.label));
+                    if (!choice) {
+                        ctx.ui.notify("Cancelled", "info");
+                        return;
+                    }
+                    
+                    const selected = items.find((_, i) => items[i].label === choice);
+                    if (selected) {
+                        await assignTaskToAgent(workspace, selected.value, ctx);
+                    }
                     return;
                 }
                 if (activeTasks.length === 1) {
@@ -930,6 +990,65 @@ export default function (pi: ExtensionAPI) {
         }
     });
 
+    // Process next task in batch mode
+    async function processNextBatchTask(workspace: string, ctx: any) {
+        if (batchIndex >= batchTasks.length) {
+            // Batch complete
+            const count = batchTasks.length;
+            batchMode = false;
+            batchTasks = [];
+            batchIndex = 0;
+            ctx.ui.notify(`Batch complete: ${count} tasks processed`, "info");
+            return;
+        }
+        
+        const currentTask = batchTasks[batchIndex];
+        
+        // Move any existing Active to Backlog
+        const activeTasks = await listTasks(workspace, "Active");
+        if (activeTasks.length > 0) {
+            await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
+        }
+        
+        // Move current batch task to Active
+        await runScript("move-task", workspace, { Name: currentTask.title, NewFolder: "Active" });
+        
+        // Get task content
+        const content = await getTaskContent(workspace, currentTask.title);
+        if (content) {
+            const taskNum = batchIndex + 1;
+            const totalTasks = batchTasks.length;
+            
+            const messageContent = `Continuing Batch: Task ${taskNum} of ${totalTasks}
+
+Work on the following task:
+
+${content}
+
+---
+
+**Instructions:**
+1. Read and understand the task above
+2. Implement the changes
+3. Commit your changes with a meaningful message
+4. Use \`/submit-qa <brief description of changes>\` to submit to QA
+5. This message IS the continuation signal - after submitting to QA, the next task will arrive automatically. Do NOT wait for any other input.
+
+---`;
+            
+            // Use sendMessage with triggerTurn to force a new agent turn
+            pi.sendMessage({
+                customType: "batch-continue",
+                content: messageContent,
+                display: true,
+            }, {
+                triggerTurn: true,
+            });
+        }
+        
+        ctx.ui.notify(`Now working on: "${currentTask.title}" (${batchIndex + 1}/${batchTasks.length})`, "info");
+    }
+
     // Helper to assign task and send to agent
     async function assignTaskToAgent(workspace: string, title: string, ctx: any) {
         const activeTasks = await listTasks(workspace, "Active");
@@ -940,12 +1059,64 @@ export default function (pi: ExtensionAPI) {
         
         const content = await getTaskContent(workspace, title);
         if (content) {
-            // Send task content as a user message to trigger the agent
-            pi.sendUserMessage(`Work on the following task:\n\n${content}\n\n---\n\nWhen finished, use \`submit-qa\` with a message to submit it to QA.`, { deliverAs: "steer" });
+            // Send task content with triggerTurn to start the agent
+            const steerContent = `Work on the following task:
+
+${content}
+
+---
+
+## Workflow
+1. Read and understand the task above
+2. Implement the changes
+3. Commit your changes with a meaningful message
+4. Use \`/submit-qa <brief description of changes>\` to submit to QA
+
+---`;
+            pi.sendMessage({
+                customType: "task-work",
+                content: steerContent,
+                display: true,
+            }, {
+                triggerTurn: true,
+            });
         }
         
         ctx.ui.notify(`Now working on: "${title}"`, "info");
     }
+
+    // Register /submit-qa command - submit active task to QA (handles batch mode)
+    pi.registerCommand("submit-qa", {
+        description: "Submit active task to QA (use /submit-qa <message>)",
+        async handler(args, ctx) {
+            const workspace = getWorkspaceName(ctx.cwd);
+            
+            const activeTasks = await listTasks(workspace, "Active");
+            if (activeTasks.length === 0) {
+                ctx.ui.notify("No active task to submit to QA", "error");
+                return;
+            }
+            
+            const taskName = activeTasks[0].title;
+            
+            // Move to user-qa folder
+            await runScript("move-task", workspace, { Name: taskName, NewFolder: "user-qa" });
+            
+            // Append QA submission note
+            const qaNote = args
+                ? `\n## QA Submission\n${args}\n`
+                : `\n## QA Submission\nSubmitted to QA.\n`;
+            await runScript("append-task", workspace, { Name: taskName, Content: qaNote });
+            
+            ctx.ui.notify(`Submitted "${taskName}" to QA`, "info");
+            
+            // If in batch mode, process next task
+            if (batchMode) {
+                batchIndex++;
+                await processNextBatchTask(workspace, ctx);
+            }
+        }
+    });
 
     // Register /task-complete command - mark task as completed
     pi.registerCommand("task-complete", {
@@ -1037,7 +1208,7 @@ export default function (pi: ExtensionAPI) {
                 await runScript("append-task", workspace, { Name: title, Content: qaNote });
                 
                 ctx.ui.notify(`Moved "${title}" to Closed`, "info");
-        }
-    }
+            }
+        },
     });
 }
