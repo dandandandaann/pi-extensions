@@ -30,7 +30,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { getAgentByIdOrName, runSync, formatSpawnResult, type SpawnResult } from "./spawn";
+import { getAgents, loadMarkdownAgents, getAgentByIdOrName, runSync, formatSpawnResult, type SpawnResult } from "./spawn";
 import type { AgentConfig } from "./types/agent";
 
 // Re-export shared types
@@ -60,7 +60,7 @@ export interface AgentsConfig {
 
 // Agent config file path in user's home directory
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
-const CONFIG_FILE = "agents.json";
+const AGENTS_SUBDIR = "agents";
 
 const DEFAULT_SYSTEM_PROMPT_HEADER = `# Agent Configuration: {agentName}
 
@@ -80,136 +80,15 @@ const DEFAULT_SYSTEM_PROMPT_HEADER = `# Agent Configuration: {agentName}
 // Helper Functions
 // ============================================================================
 
-function getConfigPath(): string {
-	return path.join(AGENT_DIR, CONFIG_FILE);
+function getAgentsDir(): string {
+	return path.join(AGENT_DIR, AGENTS_SUBDIR);
 }
 
-function loadConfig(): AgentsConfig | null {
-	try {
-		const configPath = getConfigPath();
-		if (!fs.existsSync(configPath)) {
-			return null;
-		}
-		const content = fs.readFileSync(configPath, "utf-8");
-		return JSON.parse(content) as AgentsConfig;
-	} catch (error) {
-		console.error("[agent-xpto] Failed to load config:", error);
-		return null;
+function ensureDirectoryExists(): void {
+	const dir = getAgentsDir();
+	if (!fs.existsSync(dir)) {
+		fs.mkdirSync(dir, { recursive: true });
 	}
-}
-
-/**
- * Get all configured agents (exported for external use)
- */
-export function getAgents(): AgentConfig[] {
-	const config = loadConfig();
-	return config?.agents ?? [];
-}
-
-function saveConfig(config: AgentsConfig): void {
-	try {
-		if (!fs.existsSync(AGENT_DIR)) {
-			fs.mkdirSync(AGENT_DIR, { recursive: true });
-		}
-		const configPath = getConfigPath();
-		fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
-	} catch (error) {
-		console.error("[agent-xpto] Failed to save config:", error);
-	}
-}
-
-function createDefaultConfig(): AgentsConfig {
-	return {
-		version: 1,
-		agents: [
-			{
-				id: "default",
-				name: "Default",
-				description: "General purpose coding assistant",
-				systemPrompt: "You are a versatile coding assistant. Help users write, review, and debug code.",
-				tools: {
-					read: true,
-					write: true,
-					edit: true,
-					bash: true,
-					grep: true,
-					find: true,
-				},
-				model: {
-					provider: "localhost",
-					model: "unsloth/gemma-4-e4b-it",
-				},
-				thinkingLevel: "medium",
-			},
-			{
-				id: "reviewer",
-				name: "Reviewer",
-				description: "Code review specialist - no file modifications",
-				systemPrompt:
-					"You are a code reviewer. Analyze code and provide feedback. Do NOT make any changes. Focus on code quality, security, and best practices.",
-				tools: {
-					read: true,
-					write: false,
-					edit: false,
-					bash: false,
-					grep: true,
-					find: true,
-				},
-				model: {
-					provider: "anthropic",
-					model: "claude-sonnet-4-5",
-				},
-				thinkingLevel: "high",
-			},
-			{
-				id: "architect",
-				name: "Architect",
-				description: "System design and architecture specialist",
-				systemPrompt:
-					"You are a system design expert. Focus on architecture, scalability, and best practices. Create diagrams and specifications when helpful.",
-				tools: {
-					read: true,
-					write: true,
-					edit: false,
-					bash: false,
-					grep: true,
-					find: true,
-				},
-				model: {
-					provider: "anthropic",
-					model: "claude-opus-4-5",
-				},
-				thinkingLevel: "high",
-			},
-			{
-				id: "debugger",
-				name: "Debugger",
-				description: "Debugging and troubleshooting specialist",
-				systemPrompt:
-					"You are a debugging expert. Analyze error messages, trace issues, and provide solutions. Work systematically through problems.",
-				tools: {
-					read: true,
-					write: true,
-					edit: true,
-					bash: true,
-					grep: true,
-					find: true,
-				},
-				model: {
-					provider: "anthropic",
-					model: "claude-sonnet-4-5",
-				},
-				thinkingLevel: "medium",
-			},
-		],
-		settings: {
-			hotkey: "ctrl+shift+a",
-			showInStatusBar: true,
-			rememberLastAgent: true,
-			cycleWraps: true,
-		},
-		defaultAgent: "default",
-	};
 }
 
 function buildCapabilityList(agent: AgentConfig): string {
@@ -294,19 +173,17 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 	// ============================================================================
 
 	function initializeAgents(): void {
-		let config = loadConfig();
+		// Load agents from markdown files in ~/.pi/agent/agents/
+		agents = loadMarkdownAgents();
 
-		if (!config) {
-			config = createDefaultConfig();
-			saveConfig(config);
+		if (agents.length === 0) {
+			// No markdown agents found - create the directory
+			ensureDirectoryExists();
+			console.warn("[agent-xpto] No agent files found in", getAgentsDir());
 		}
 
-		agents = config.agents;
-		settings = { ...settings, ...config.settings };
-
-		// Set initial agent
-		const defaultIndex = agents.findIndex((a) => a.id === config.defaultAgent);
-		currentAgentIndex = defaultIndex >= 0 ? defaultIndex : 0;
+		// Set initial agent to first one
+		currentAgentIndex = agents.length > 0 ? 0 : -1;
 	}
 
 	// ============================================================================

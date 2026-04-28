@@ -27,7 +27,7 @@ your-project/
 │       └── agent-xpto.ts
 ```
 
-Agent configuration is loaded from `~/.pi/agent/agents.json` (global).
+Agent configuration is loaded from `~/.pi/agent/agents/` (global markdown files).
 
 ### Option 2: Global installation
 
@@ -40,60 +40,135 @@ The extension is auto-discovered from the global extensions directory:
 Copy `agent-xpto.ts` there. The agent configuration will be loaded from:
 
 ```
-~/.pi/agent/agents.json
+~/.pi/agent/agents/
 ```
 
-## Configuration
+## Agent Configuration
 
-Edit `~/.pi/agent/agents.json` to configure your agents:
+Agents are defined as markdown files in `~/.pi/agent/agents/`. Each `.md` file represents one agent with YAML frontmatter metadata.
 
-```json
-{
-  "version": 1,
-  "agents": [
-    {
-      "id": "default",
-      "name": "Default",
-      "description": "General purpose coding assistant",
-      "systemPrompt": "You are a versatile coding assistant.",
-      "tools": {
-        "read": true,
-        "write": true,
-        "edit": true,
-        "bash": true,
-        "grep": true,
-        "find": true
-      },
-      "model": {
-        "provider": "anthropic",
-        "model": "claude-opus-4-5"
-      },
-      "thinkingLevel": "medium"
-    }
-  ],
-  "settings": {
-    "hotkey": "ctrl+shift+a",
-    "showInStatusBar": true,
-    "rememberLastAgent": true,
-    "cycleWraps": true
-  },
-  "defaultAgent": "default"
-}
+### File Format
+
+```markdown
+---
+name: ☁️ Default
+description: General purpose coding assistant
+tools:
+  read: true
+  grep: true
+  find: true
+  bash: true
+  write: true
+  edit: true
+model: minimax/MiniMax-M2.7
+thinking: medium
+---
+
+You are a versatile coding assistant. Help users write, review, and debug code.
 ```
 
-### Agent Configuration Fields
+### Frontmatter Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | string | Unique identifier for the agent |
-| `name` | string | Display name for the agent |
+| `name` | string | Display name for the agent (required) |
 | `description` | string | Brief description of the agent's role |
-| `systemPrompt` | string | Custom instructions for this agent |
 | `tools` | object | Tool permissions (true/false for each tool) |
-| `model` | object | Preferred model (`provider` and `model`) |
-| `thinkingLevel` | string | Thinking level: "off", "minimal", "low", "medium", "high", "xhigh" |
+| `model` | string | Model in `provider/model` format (e.g., `minimax/MiniMax-M2.7`) |
+| `thinking` | string | Thinking level: "off", "minimal", "low", "medium", "high", "xhigh" |
 
-### Settings
+### Body Content
+
+The content after the closing `---` becomes the agent's `systemPrompt`.
+
+### Default Tools
+
+Tools not listed in the frontmatter default to `false`.
+
+### Example Agents
+
+Create these files in `~/.pi/agent/agents/`:
+
+#### default.md
+
+```markdown
+---
+name: ☁️ Default
+description: General purpose coding assistant
+tools:
+  read: true
+  grep: true
+  find: true
+  bash: true
+  write: true
+  edit: true
+model: minimax/MiniMax-M2.7
+thinking: medium
+---
+
+You are a versatile coding assistant. Help users write, review, and debug code.
+```
+
+#### planner.md
+
+```markdown
+---
+name: 📝 Planner
+description: Creates implementation plans from context and requirements
+tools:
+  read: true
+  grep: true
+  find: true
+  bash: false
+  write: false
+model: minimax/MiniMax-M2.7
+thinking: high
+---
+
+You are a planning subagent. Your job is to turn requirements into concrete plans.
+```
+
+#### scout.md
+
+```markdown
+---
+name: 🔍 Scout
+description: Fast codebase reconnaissance
+tools:
+  read: true
+  grep: true
+  find: true
+  ls: true
+  bash: false
+  write: false
+  edit: false
+thinking: low
+---
+
+You are a fast reconnaissance agent. Quickly explore and summarize codebases.
+```
+
+#### worker.md
+
+```markdown
+---
+name: ⚙️ Worker
+description: General implementation agent
+tools:
+  read: true
+  write: true
+  edit: true
+  bash: true
+  grep: true
+  find: true
+model: minimax/MiniMax-M2.7
+thinking: medium
+---
+
+You are a general implementation agent. Write, modify, and debug code.
+```
+
+## Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -119,89 +194,11 @@ Edit `~/.pi/agent/agents.json` to configure your agents:
 | `Ctrl+Shift+S` | Open agent selector |
 | `Ctrl+Shift+D` | Show current agent info |
 
-## Example Agents
-
-### Code Reviewer
-
-A read-only reviewer that analyzes code without making changes:
-
-```json
-{
-  "id": "reviewer",
-  "name": "Reviewer",
-  "description": "Code review specialist",
-  "systemPrompt": "You are a code reviewer. Analyze code and provide feedback. Do NOT make any changes.",
-  "tools": {
-    "read": true,
-    "write": false,
-    "edit": false,
-    "bash": false,
-    "grep": true,
-    "find": true
-  },
-  "model": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-5"
-  },
-  "thinkingLevel": "high"
-}
-```
-
-### System Architect
-
-Focuses on design and architecture without modifying code:
-
-```json
-{
-  "id": "architect",
-  "name": "Architect",
-  "description": "System design specialist",
-  "systemPrompt": "You are a system design expert. Focus on architecture and best practices.",
-  "tools": {
-    "read": true,
-    "write": true,
-    "edit": false,
-    "bash": false
-  },
-  "model": {
-    "provider": "anthropic",
-    "model": "claude-opus-4-5"
-  },
-  "thinkingLevel": "high"
-}
-```
-
-### Debugger
-
-Specializes in troubleshooting and fixes:
-
-```json
-{
-  "id": "debugger",
-  "name": "Debugger",
-  "description": "Debugging specialist",
-  "systemPrompt": "You are a debugging expert. Analyze errors and provide solutions.",
-  "tools": {
-    "read": true,
-    "write": true,
-    "edit": true,
-    "bash": true,
-    "grep": true,
-    "find": true
-  },
-  "model": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-5"
-  },
-  "thinkingLevel": "medium"
-}
-```
-
 ## Architecture
 
 ### Extension Components
 
-1. **Agent Configuration Loader** - Loads agents from `agents.json`
+1. **Agent Loader** - Loads agents from `.md` files in `~/.pi/agent/agents/`
 2. **Agent State Manager** - Tracks current agent and handles switching
 3. **Status Bar Display** - Shows current agent in footer
 4. **Tool Filter** - Intercepts and blocks disabled tools
@@ -210,7 +207,7 @@ Specializes in troubleshooting and fixes:
 
 ### Event Flow
 
-1. Session starts → Load agents from config
+1. Session starts → Load agents from markdown files
 2. User sends prompt → `before_agent_start` injects system prompt
 3. Tool called → `tool_call` filters based on agent tools
 4. Agent starts → `agent_start` applies model/thinking level
