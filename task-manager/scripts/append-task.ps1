@@ -16,7 +16,7 @@ foreach ($folder in @("Backlog", "Active", "user-qa", "Closed")) {
     $Files = Get-ChildItem -Path $Dir -Filter "*.md" -ErrorAction SilentlyContinue
     foreach ($File in $Files) {
         $fileContent = Get-Content $File.FullName -Raw
-        if ($fileContent -match '(?s)^---\n(.*?)\n---') {
+        if ($fileContent -match '(?s)^---\r?\n(.*?)\r?\n---') {
             $fm = $matches[1]
             if ($fm -match "id:\s*$UUID") {
                 $FilePath = $File.FullName

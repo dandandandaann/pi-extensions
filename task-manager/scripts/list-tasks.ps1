@@ -13,7 +13,7 @@ Get-ChildItem -Path $TaskDir -Filter "*.md" | ForEach-Object {
     $created = ""
     $uuid = ""
     $content = Get-Content $_.FullName -Raw
-    if ($content -match '(?s)^---\n(.*?)\n---') {
+    if ($content -match '(?s)^---\r?\n(.*?)\r?\n---') {
         $fm = $matches[1]
         if ($fm -match 'title:\s*(.+)') { $title = $matches[1].Trim() }
         if ($fm -match 'priority:\s*(.+)') { $priority = $matches[1].Trim() }
