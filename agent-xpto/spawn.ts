@@ -51,7 +51,8 @@ function parseModelString(modelStr: string): { provider: string; model: string }
 }
 
 function parseYamlFrontMatter(content: string): { metadata: Record<string, unknown>; body: string } {
-	const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+	// Use \r?\n to handle both CRLF (Windows) and LF (Unix) line endings
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
 	if (!match) {
 		return { metadata: {}, body: content };
 	}
@@ -69,13 +70,17 @@ function parseYamlFrontMatter(content: string): { metadata: Record<string, unkno
 			let value = line.substring(colonIndex + 1).trim();
 
 			if (value === "") {
-				const listItems: string[] = [];
+				// Nested object (like tools section)
+				const nestedObj: Record<string, boolean> = {};
 				for (let j = i + 1; j < lines.length; j++) {
 					const nextLine = lines[j];
 					if (nextLine.match(/^\s+[a-z]/)) {
 						const itemMatch = nextLine.match(/^\s+([a-z]+):\s*(true|false)?/);
 						if (itemMatch) {
-							listItems.push(itemMatch[1]);
+							const toolName = itemMatch[1];
+							const toolValue = itemMatch[2];
+							// Default to true if value not specified, otherwise use the value
+							nestedObj[toolName] = toolValue === "false" ? false : true;
 						}
 					} else if (nextLine.trim() === "") {
 						continue;
@@ -83,8 +88,8 @@ function parseYamlFrontMatter(content: string): { metadata: Record<string, unkno
 						break;
 					}
 				}
-				if (listItems.length > 0) {
-					metadata[key] = listItems.reduce((acc, item) => ({ ...acc, [item]: true }), {});
+				if (Object.keys(nestedObj).length > 0) {
+					metadata[key] = nestedObj;
 				}
 			} else {
 				if (value === "true") metadata[key] = true;
