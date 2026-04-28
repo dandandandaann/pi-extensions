@@ -664,10 +664,37 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
-    // Helper to find task file path and open it in default editor
-    async function findTaskPath(workspace: string, name: string): Promise<string | null> {
-        const normalizedName = normalizeTaskName(name);
+    // Helper to find task file path by title or UUID
+    async function findTaskPath(workspace: string, nameOrUUID: string): Promise<string | null> {
+        // First try to find by UUID in frontmatter
+        for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
+            const folderPath = resolve(TASKS_ROOT, workspace, folder);
+            const { readdir } = await import("node:fs/promises");
+            
+            let files: string[];
+            try {
+                files = await readdir(folderPath);
+            } catch {
+                continue;
+            }
+            
+            for (const file of files) {
+                if (!file.endsWith(".md")) continue;
+                const filePath = resolve(folderPath, file);
+                try {
+                    const { readFile } = await import("node:fs/promises");
+                    const content = await readFile(filePath, "utf8");
+                    if (content.match(new RegExp(`id:\\s*${nameOrUUID}`))) {
+                        return filePath;
+                    }
+                } catch {
+                    continue;
+                }
+            }
+        }
         
+        // Fallback: try to find by normalized title in filename
+        const normalizedName = normalizeTaskName(nameOrUUID);
         for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
             const folderPath = resolve(TASKS_ROOT, workspace, folder);
             const { readdir } = await import("node:fs/promises");
@@ -686,6 +713,16 @@ export default function (pi: ExtensionAPI) {
                     return resolve(folderPath, file);
                 }
             }
+        }
+        return null;
+    }
+    
+    // Get task info by UUID
+    async function getTaskByUUID(workspace: string, uuid: string): Promise<TaskInfo | null> {
+        const allTasks = await getAllTasks(workspace);
+        for (const result of allTasks) {
+            const task = result.tasks.find(t => t.uuid === uuid);
+            if (task) return task;
         }
         return null;
     }
@@ -734,11 +771,16 @@ export default function (pi: ExtensionAPI) {
                 
                 const selected = items.find((_, i) => items[i].label === choice);
                 if (selected) {
-                    const filePath = await findTaskPath(workspace, selected.value);
-                    if (filePath) {
-                        await openTaskFileInEditor(filePath, selected.value, ctx);
+                    const task = await getTaskByUUID(workspace, selected.value);
+                    if (task) {
+                        const filePath = await findTaskPath(workspace, task.uuid);
+                        if (filePath) {
+                            await openTaskFileInEditor(filePath, task.title, ctx);
+                        } else {
+                            ctx.ui.notify(`Could not find task file for "${task.title}"`, "error");
+                        }
                     } else {
-                        ctx.ui.notify(`Could not find task file for "${selected.value}"`, "error");
+                        ctx.ui.notify(`Could not find task with UUID ${selected.value.substring(0, 8)}`, "error");
                     }
                 }
                 return;
@@ -750,7 +792,7 @@ export default function (pi: ExtensionAPI) {
             
             if (exactMatch) {
                 // Exact match found - open directly
-                const filePath = await findTaskPath(workspace, exactMatch.title);
+                const filePath = await findTaskPath(workspace, exactMatch.uuid);
                 if (filePath) {
                     await openTaskFileInEditor(filePath, exactMatch.title, ctx);
                 } else {
@@ -781,13 +823,16 @@ export default function (pi: ExtensionAPI) {
             
             const selected = items.find((_, i) => items[i].label === choice);
             if (selected) {
-                const taskUUID = selected.value;
-                const task = matches.find(m => m.uuid === taskUUID);
-                const filePath = await findTaskPath(workspace, task?.title || "");
-                if (filePath) {
-                    await openTaskFileInEditor(filePath, task?.title || "", ctx);
+                const task = await getTaskByUUID(workspace, selected.value);
+                if (task) {
+                    const filePath = await findTaskPath(workspace, task.uuid);
+                    if (filePath) {
+                        await openTaskFileInEditor(filePath, task.title, ctx);
+                    } else {
+                        ctx.ui.notify(`Could not find task file`, "error");
+                    }
                 } else {
-                    ctx.ui.notify(`Could not find task file`, "error");
+                    ctx.ui.notify(`Could not find task with UUID ${selected.value.substring(0, 8)}`, "error");
                 }
             }
         },
