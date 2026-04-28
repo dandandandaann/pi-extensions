@@ -49,10 +49,11 @@ function getWorkspaceName(cwd: string): string {
 }
 
 interface TaskInfo {
-    id: string;
+    filename: string;
     title: string;
     priority: string;
     created: string;
+    uuid: string;
     folder: string;
     path?: string;
 }
@@ -87,6 +88,7 @@ const TasksParamsSchema = Type.Object({
         Type.Literal("critical")
     ], { description: "Task priority (for create action), defaults to medium" })),
     message: Type.Optional(Type.String({ description: "QA submission message (for submit-qa action)" })),
+    uuid: Type.Optional(Type.String({ description: "Task UUID (for move, rename, delete, append, get, submit-qa)" })),
 });
 type TasksParams = Static<typeof TasksParamsSchema>;
 
@@ -108,8 +110,8 @@ async function listTasks(workspace: string, folder: string): Promise<TaskInfo[]>
         .map(line => line.trim())
         .filter(line => line.length > 0)
         .map(line => {
-            const [id, title, priority, created] = line.split("\t");
-            return { id: id || "", title: title || "Untitled", priority: priority || "medium", created: created || "", folder };
+            const [filename, title, priority, created, uuid] = line.split("\t");
+            return { filename: filename || "", title: title || "Untitled", priority: priority || "medium", created: created || "", uuid: uuid || "", folder };
         });
 }
 
@@ -368,7 +370,7 @@ export default function (pi: ExtensionAPI) {
                             if (result.tasks.length > 0) {
                                 output += `\n## ${result.folder} (${result.tasks.length})\n`;
                                 for (const task of result.tasks) {
-                                    output += `- **${task.title}** [${task.priority}] ${task.id.substring(0, 8)}\n`;
+                                    output += `- **${task.title}** [${task.priority}] ${task.uuid.substring(0, 8)}\n`;
                                 }
                             }
                         }
@@ -379,9 +381,9 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "move": {
-                        if (!p.name || !p.folder) {
+                        if (!p.uuid || !p.folder) {
                             return {
-                                content: [{ type: "text", text: "Error: name and folder required for move" }],
+                                content: [{ type: "text", text: "Error: uuid and folder required for move" }],
                                 details: { error: "missing parameters" }
                             };
                         }
@@ -389,68 +391,65 @@ export default function (pi: ExtensionAPI) {
                         // Check if moving to Active and there's already an active task
                         if (p.folder === "Active") {
                             const activeTasks = await listTasks(workspace, "Active");
-                            if (activeTasks.length > 0) {
-                                const current = await findTask(workspace, p.name);
-                                if (!current || current.folder !== "Active") {
-                                    const proceed = await ctx.ui.confirm(
-                                        "Active Task Exists",
-                                        `Move "${activeTasks[0].title}" to Backlog and set "${p.name}" to Active?`
-                                    );
-                                    if (!proceed) {
-                                        return {
-                                            content: [{ type: "text", text: "Cancelled: keeping current active task" }],
-                                            details: { action: "move", cancelled: true }
-                                        };
-                                    }
-                                    // Move current active to backlog first
-                                    await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
+                            if (activeTasks.length > 0 && activeTasks[0].uuid !== p.uuid) {
+                                const proceed = await ctx.ui.confirm(
+                                    "Active Task Exists",
+                                    `Move "${activeTasks[0].title}" to Backlog and set task to Active?`
+                                );
+                                if (!proceed) {
+                                    return {
+                                        content: [{ type: "text", text: "Cancelled: keeping current active task" }],
+                                        details: { action: "move", cancelled: true }
+                                    };
                                 }
+                                // Move current active to backlog first
+                                await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
                             }
                         }
 
-                        const result = await runScript("move-task", workspace, { Name: p.name, NewFolder: p.folder });
+                        const result = await runScript("move-task", workspace, { UUID: p.uuid, NewFolder: p.folder });
                         return {
-                            content: [{ type: "text", text: `Moved "${p.name}" to ${p.folder}` }],
+                            content: [{ type: "text", text: `Moved task to ${p.folder}` }],
                             details: { action: "move", result }
                         };
                     }
 
                     case "append": {
-                        if (!p.name || !p.content) {
+                        if (!p.uuid || !p.content) {
                             return {
-                                content: [{ type: "text", text: "Error: name and content required for append" }],
+                                content: [{ type: "text", text: "Error: uuid and content required for append" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        await runScript("append-task", workspace, { Name: p.name, Content: p.content });
+                        await runScript("append-task", workspace, { UUID: p.uuid, Content: p.content });
                         return {
-                            content: [{ type: "text", text: `Added to "${p.name}"` }],
+                            content: [{ type: "text", text: `Added content to task` }],
                             details: { action: "append" }
                         };
                     }
 
                     case "delete": {
-                        if (!p.name) {
+                        if (!p.uuid) {
                             return {
-                                content: [{ type: "text", text: "Error: name required for delete" }],
+                                content: [{ type: "text", text: "Error: uuid required for delete" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const folder = await runScript("delete-task", workspace, { Name: p.name });
+                        const folder = await runScript("delete-task", workspace, { UUID: p.uuid });
                         return {
-                            content: [{ type: "text", text: `Deleted "${p.name}" from ${folder}` }],
+                            content: [{ type: "text", text: `Deleted task from ${folder}` }],
                             details: { action: "delete", folder }
                         };
                     }
 
                     case "rename": {
-                        if (!p.name || !p.newTitle) {
+                        if (!p.uuid || !p.newTitle) {
                             return {
-                                content: [{ type: "text", text: "Error: name and newTitle required for rename" }],
+                                content: [{ type: "text", text: "Error: uuid and newTitle required for rename" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const folder = await runScript("rename-task", workspace, { Name: p.name, NewTitle: p.newTitle });
+                        const folder = await runScript("rename-task", workspace, { UUID: p.uuid, NewTitle: p.newTitle });
                         return {
                             content: [{ type: "text", text: `Renamed to "${p.newTitle}" (${folder})` }],
                             details: { action: "rename", folder }
@@ -478,23 +477,16 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "get": {
-                        if (!p.name) {
+                        if (!p.uuid) {
                             return {
-                                content: [{ type: "text", text: "Error: name required for get" }],
+                                content: [{ type: "text", text: "Error: uuid required for get" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const task = await findTask(workspace, p.name);
-                        if (!task) {
-                            return {
-                                content: [{ type: "text", text: `No task found matching "${p.name}"` }],
-                                details: { action: "get", found: false }
-                            };
-                        }
-                        const output = await runScript("append-task", workspace, { Name: p.name });
+                        const output = await runScript("append-task", workspace, { UUID: p.uuid });
                         return {
                             content: [{ type: "text", text: output }],
-                            details: { action: "get", task }
+                            details: { action: "get" }
                         };
                     }
 
@@ -512,11 +504,11 @@ export default function (pi: ExtensionAPI) {
                                 details: { error: "multiple active tasks" }
                             };
                         }
-                        const taskName = activeTasks[0].title;
-                        const result = await runScript("submit-to-qa", workspace, { Name: taskName, Context: p.message || "" });
+                        const taskUUID = activeTasks[0].uuid;
+                        const result = await runScript("submit-to-qa", workspace, { UUID: taskUUID, Context: p.message || "" });
                         return {
-                            content: [{ type: "text", text: `Submitted "${taskName}" to QA: ${p.message || ""}` }],
-                            details: { action: "submit-qa", task: taskName, result }
+                            content: [{ type: "text", text: `Submitted task to QA: ${p.message || ""}` }],
+                            details: { action: "submit-qa", uuid: taskUUID, result }
                         };
                     }
 
@@ -564,7 +556,7 @@ export default function (pi: ExtensionAPI) {
                 for (const task of result.tasks) {
                     items.push({
                         value: `${result.folder}:${task.title}`,
-                        label: `[${result.folder}] ${task.title}`
+                        label: `[${result.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                     });
                 }
             }
@@ -624,13 +616,14 @@ export default function (pi: ExtensionAPI) {
             if (exactMatch) {
                 // Exact match found - select directly
                 const title = exactMatch.title;
+                const taskUUID = exactMatch.uuid;
                 
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
-                if (activeTasks.length > 0) {
-                    await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
+                if (activeTasks.length > 0 && activeTasks[0].uuid !== taskUUID) {
+                    await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
                 }
-                await runScript("move-task", workspace, { Name: title, NewFolder: "Active" });
+                await runScript("move-task", workspace, { UUID: taskUUID, NewFolder: "Active" });
                 ctx.ui.notify(`Now active: "${title}"`, "info");
                 return;
             }
@@ -640,12 +633,12 @@ export default function (pi: ExtensionAPI) {
                 return;
             }
             
-            // No exact match - show disambiguation list
+            // No exact match - show disambiguation list with UUIDs
             const items: { value: string; label: string }[] = [];
             for (const task of matches) {
                 items.push({
-                    value: task.title,
-                    label: `[${task.folder}] ${task.title}`
+                    value: task.uuid,
+                    label: `[${task.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                 });
             }
 
@@ -657,15 +650,16 @@ export default function (pi: ExtensionAPI) {
 
             const selected = items.find((_, i) => items[i].label === choice);
             if (selected) {
-                const title = selected.value;
+                const taskUUID = selected.value;
+                const task = matches.find(m => m.uuid === taskUUID);
                 
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
-                if (activeTasks.length > 0) {
-                    await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
+                if (activeTasks.length > 0 && activeTasks[0].uuid !== taskUUID) {
+                    await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
                 }
-                await runScript("move-task", workspace, { Name: title, NewFolder: "Active" });
-                ctx.ui.notify(`Now active: "${title}"`, "info");
+                await runScript("move-task", workspace, { UUID: taskUUID, NewFolder: "Active" });
+                ctx.ui.notify(`Now active: "${task?.title}"`, "info");
             }
         },
     });
@@ -721,8 +715,8 @@ export default function (pi: ExtensionAPI) {
                 for (const result of allTasks) {
                     for (const task of result.tasks) {
                         items.push({
-                            value: task.title,
-                            label: `[${result.folder}] ${task.title}`
+                            value: task.uuid,
+                            label: `[${result.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                         });
                     }
                 }
@@ -770,12 +764,12 @@ export default function (pi: ExtensionAPI) {
                 return;
             }
             
-            // No exact match - show disambiguation list
+            // No exact match - show disambiguation list with UUIDs
             const items: { value: string; label: string }[] = [];
             for (const task of matches) {
                 items.push({
-                    value: task.title,
-                    label: `[${task.folder}] ${task.title}`
+                    value: task.uuid,
+                    label: `[${task.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                 });
             }
             
@@ -787,11 +781,13 @@ export default function (pi: ExtensionAPI) {
             
             const selected = items.find((_, i) => items[i].label === choice);
             if (selected) {
-                const filePath = await findTaskPath(workspace, selected.value);
+                const taskUUID = selected.value;
+                const task = matches.find(m => m.uuid === taskUUID);
+                const filePath = await findTaskPath(workspace, task?.title || "");
                 if (filePath) {
-                    await openTaskFileInEditor(filePath, selected.value, ctx);
+                    await openTaskFileInEditor(filePath, task?.title || "", ctx);
                 } else {
-                    ctx.ui.notify(`Could not find task file for "${selected.value}"`, "error");
+                    ctx.ui.notify(`Could not find task file`, "error");
                 }
             }
         },
@@ -927,8 +923,8 @@ export default function (pi: ExtensionAPI) {
                     for (const result of openTasks) {
                         for (const task of result.tasks) {
                             items.push({
-                                value: task.title,
-                                label: `[${result.folder}] ${task.title}`
+                                value: task.uuid,
+                                label: `[${result.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                             });
                         }
                     }
@@ -952,7 +948,7 @@ export default function (pi: ExtensionAPI) {
                 }
                 if (activeTasks.length === 1) {
                     // Use the single active task
-                    await assignTaskToAgent(workspace, activeTasks[0].title, ctx);
+                    await assignTaskToAgent(workspace, activeTasks[0].uuid, ctx);
                     return;
                 }
                 ctx.ui.notify(`Multiple active tasks. Use /task-work <task-name>`, "info");
@@ -963,7 +959,7 @@ export default function (pi: ExtensionAPI) {
             const exactMatch = await findExactMatch(workspace, args);
             
             if (exactMatch) {
-                await assignTaskToAgent(workspace, exactMatch.title, ctx);
+                await assignTaskToAgent(workspace, exactMatch.uuid, ctx);
                 return;
             }
             
@@ -973,8 +969,8 @@ export default function (pi: ExtensionAPI) {
             }
             
             const items: { value: string; label: string }[] = matches.map(task => ({
-                value: task.title,
-                label: `[${task.folder}] ${task.title}`
+                value: task.uuid,
+                label: `[${task.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
             }));
 
             const choice = await ctx.ui.select(`${matches.length} tasks matching "${args}":`, items.map(i => i.label));
@@ -1007,11 +1003,11 @@ export default function (pi: ExtensionAPI) {
         // Move any existing Active to Backlog
         const activeTasks = await listTasks(workspace, "Active");
         if (activeTasks.length > 0) {
-            await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
+            await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
         }
         
         // Move current batch task to Active
-        await runScript("move-task", workspace, { Name: currentTask.title, NewFolder: "Active" });
+        await runScript("move-task", workspace, { UUID: currentTask.uuid, NewFolder: "Active" });
         
         // Get task content
         const content = await getTaskContent(workspace, currentTask.title);
@@ -1049,15 +1045,28 @@ ${content}
         ctx.ui.notify(`Now working on: "${currentTask.title}" (${batchIndex + 1}/${batchTasks.length})`, "info");
     }
 
-    // Helper to assign task and send to agent
-    async function assignTaskToAgent(workspace: string, title: string, ctx: any) {
-        const activeTasks = await listTasks(workspace, "Active");
-        if (activeTasks.length > 0) {
-            await runScript("move-task", workspace, { Name: activeTasks[0].title, NewFolder: "Backlog" });
+    // Helper to assign task and send to agent (takes UUID)
+    async function assignTaskToAgent(workspace: string, uuid: string, ctx: any) {
+        // Find task by UUID
+        const allTasks = await getAllTasks(workspace);
+        let task: TaskInfo | undefined;
+        for (const result of allTasks) {
+            task = result.tasks.find(t => t.uuid === uuid);
+            if (task) break;
         }
-        await runScript("move-task", workspace, { Name: title, NewFolder: "Active" });
         
-        const content = await getTaskContent(workspace, title);
+        if (!task) {
+            ctx.ui.notify(`Task with UUID ${uuid.substring(0, 8)} not found`, "error");
+            return;
+        }
+        
+        const activeTasks = await listTasks(workspace, "Active");
+        if (activeTasks.length > 0 && activeTasks[0].uuid !== uuid) {
+            await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
+        }
+        await runScript("move-task", workspace, { UUID: uuid, NewFolder: "Active" });
+        
+        const content = await getTaskContent(workspace, task.title);
         if (content) {
             // Send task content with triggerTurn to start the agent
             const steerContent = `Work on the following task:
@@ -1082,7 +1091,7 @@ ${content}
             });
         }
         
-        ctx.ui.notify(`Now working on: "${title}"`, "info");
+        ctx.ui.notify(`Now working on: "${task.title}"`, "info");
     }
 
     // Register /submit-qa command - submit active task to QA (handles batch mode)
@@ -1097,18 +1106,19 @@ ${content}
                 return;
             }
             
-            const taskName = activeTasks[0].title;
+            const taskUUID = activeTasks[0].uuid;
+            const taskTitle = activeTasks[0].title;
             
             // Move to user-qa folder
-            await runScript("move-task", workspace, { Name: taskName, NewFolder: "user-qa" });
+            await runScript("move-task", workspace, { UUID: taskUUID, NewFolder: "user-qa" });
             
             // Append QA submission note
             const qaNote = args
                 ? `\n## QA Submission\n${args}\n`
                 : `\n## QA Submission\nSubmitted to QA.\n`;
-            await runScript("append-task", workspace, { Name: taskName, Content: qaNote });
+            await runScript("append-task", workspace, { UUID: taskUUID, Content: qaNote });
             
-            ctx.ui.notify(`Submitted "${taskName}" to QA`, "info");
+            ctx.ui.notify(`Submitted "${taskTitle}" to QA`, "info");
             
             // If in batch mode, process next task
             if (batchMode) {
@@ -1132,8 +1142,8 @@ ${content}
                 for (const result of openTasks) {
                     for (const task of result.tasks) {
                         items.push({
-                            value: task.title,
-                            label: `[${result.folder}] ${task.title}`
+                            value: task.uuid,
+                            label: `[${result.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                         });
                     }
                 }
@@ -1151,8 +1161,9 @@ ${content}
                 
                 const selected = items.find((_, i) => items[i].label === choice);
                 if (selected) {
-                    args = selected.value;
+                    await completeTask(workspace, selected.value, ctx);
                 }
+                return;
             }
 
             // Find tasks matching the input
@@ -1163,16 +1174,7 @@ ${content}
             
             if (exactMatch) {
                 // Exact match found - process directly
-                const title = exactMatch.title;
-                
-                // Move to Closed folder (with AllowClosed flag)
-                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed", AllowClosed: true });
-                
-                // Append completion note
-                const qaNote = `\n## Completed\nTask marked as complete.`;
-                await runScript("append-task", workspace, { Name: title, Content: qaNote });
-                
-                ctx.ui.notify(`Moved "${title}" to Closed`, "info");
+                await completeTask(workspace, exactMatch.uuid, ctx);
                 return;
             }
             
@@ -1181,12 +1183,12 @@ ${content}
                 return;
             }
             
-            // No exact match - show disambiguation list
+            // No exact match - show disambiguation list with UUIDs
             const items: { value: string; label: string }[] = [];
             for (const task of matches) {
                 items.push({
-                    value: task.title,
-                    label: `[${task.folder}] ${task.title}`
+                    value: task.uuid,
+                    label: `[${task.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                 });
             }
 
@@ -1198,17 +1200,35 @@ ${content}
 
             const selected = items.find((_, i) => items[i].label === choice);
             if (selected) {
-                const title = selected.value;
-                
-                // Move to Closed folder (with AllowClosed flag)
-                await runScript("move-task", workspace, { Name: title, NewFolder: "Closed", AllowClosed: true });
-                
-                // Append completion note
-                const qaNote = `\n## Completed\nTask marked as complete.`;
-                await runScript("append-task", workspace, { Name: title, Content: qaNote });
-                
-                ctx.ui.notify(`Moved "${title}" to Closed`, "info");
+                await completeTask(workspace, selected.value, ctx);
             }
         },
     });
+    
+    // Helper to complete a task (takes UUID)
+    async function completeTask(workspace: string, uuid: string, ctx: any) {
+        // Find task by UUID
+        const allTasks = await getAllTasks(workspace);
+        let task: TaskInfo | undefined;
+        for (const result of allTasks) {
+            task = result.tasks.find(t => t.uuid === uuid);
+            if (task) break;
+        }
+        
+        if (!task) {
+            ctx.ui.notify(`Task with UUID ${uuid.substring(0, 8)} not found`, "error");
+            return;
+        }
+        
+        const title = task.title;
+        
+        // Move to Closed folder (with AllowClosed flag)
+        await runScript("move-task", workspace, { UUID: uuid, NewFolder: "Closed", AllowClosed: true });
+        
+        // Append completion note
+        const qaNote = `\n## Completed\nTask marked as complete.`;
+        await runScript("append-task", workspace, { UUID: uuid, Content: qaNote });
+        
+        ctx.ui.notify(`Moved "${title}" to Closed`, "info");
+    }
 }

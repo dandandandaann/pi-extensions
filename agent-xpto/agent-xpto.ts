@@ -371,10 +371,11 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 				const agent = agents[i];
 				const marker = agent.id === currentAgent.id ? "▸ " : "  ";
 				const model = agent.model ? ` (${agent.model.model})` : "";
-				items.push(`${marker}[${i + 1}] ${agent.name}${model}`);
+				const lines = [`${marker}[${i + 1}] ${agent.name}${model}`];
 				if (agent.description) {
-					items.push(`      ${agent.description}`);
+					lines.push(`      ${agent.description}`);
 				}
+				items.push(lines.join("\n"));
 			}
 
 			items.push("---");
@@ -405,8 +406,9 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			// Parse selection
-			const match = selected.match(/\[(\d+)\]\s+(.+)/);
+			// Parse selection - extract index from first line of multi-line selection
+			const firstLine = selected.split("\n")[0];
+			const match = firstLine.match(/\[(\d+)\]\s+(.+)/);
 			if (match) {
 				const index = parseInt(match[1], 10) - 1;
 				if (index >= 0 && index < agents.length) {
