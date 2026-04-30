@@ -165,7 +165,6 @@ export function loadMarkdownAgents(): AgentConfig[] {
 			}
 		}
 
-		console.log(`[spawn] Loaded ${agents.length} agents from ${agentsDir}`);
 		return agents;
 	} catch (error) {
 		console.error("[spawn] Failed to load markdown agents:", error);

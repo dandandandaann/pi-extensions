@@ -30,7 +30,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { getAgents, loadMarkdownAgents, getAgentByIdOrName, runSync, formatSpawnResult, type SpawnResult } from "./spawn";
+import { loadMarkdownAgents, getAgentByIdOrName, runSync, formatSpawnResult, type SpawnResult } from "./spawn";
 import type { AgentConfig } from "./types/agent";
 
 // Re-export shared types
@@ -175,6 +175,8 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 	function initializeAgents(): void {
 		// Load agents from markdown files in ~/.pi/agent/agents/
 		agents = loadMarkdownAgents();
+		
+		console.log(`[initializeAgents] Loaded ${agents.length} agents:`, agents.map(a => a.name));
 
 		if (agents.length === 0) {
 			// No markdown agents found - create the directory
@@ -568,9 +570,6 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 			// Format and return the result
 			const formattedResult = formatSpawnResult(result);
-
-			// Log to console for debugging
-			// console.log("[agent-xpto] Agent call result:", formattedResult);
 
 			// Return result to parent agent
 			ctx.ui.notify(formattedResult, "info");
