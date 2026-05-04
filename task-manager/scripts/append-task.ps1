@@ -15,12 +15,12 @@ foreach ($folder in @("Backlog", "Active", "user-qa", "Closed")) {
     $Dir = "$TasksRoot/$folder"
     if (-not (Test-Path $Dir)) { continue }
     $Files = Get-ChildItem -Path $Dir -Filter "*.md" -ErrorAction SilentlyContinue
-    foreach ($File in $Files) {
-        $fileContent = Get-Content $File.FullName -Raw
+    foreach ($taskFile in $Files) {
+        $fileContent = Get-Content $taskFile.FullName -Raw
         if ($fileContent -match '(?s)^---\r?\n(.*?)\r?\n---') {
             $fm = $matches[1]
             if ($fm -match "id:\s*$UUID") {
-                $FilePath = $File.FullName
+                $FilePath = $taskFile.FullName
                 $Found = $folder
                 break
             }
