@@ -26,14 +26,14 @@ function registerTaskRenderer(pi: ExtensionAPI): void {
     pi.registerMessageRenderer("task", (message, options, theme) => {
         const { expanded } = options;
         const taskName = (message.details as { name?: string })?.name || "Task";
-        
+
         let header = theme.fg("accent", `📋 ${taskName}`);
         let body = message.content;
-        
+
         if (expanded && message.details) {
             body += "\n" + theme.fg("dim", JSON.stringify(message.details, null, 2));
         }
-        
+
         return new Text(`${header}\n\n${body}`, 1, 1);
     });
 }
@@ -103,9 +103,9 @@ async function listTasks(workspace: string, folder: string): Promise<TaskInfo[]>
         `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -Workspace "${workspace}" -Folder "${folder}"`,
         { encoding: "utf8" }
     );
-    
+
     if (!stdout.trim()) return [];
-    
+
     return stdout.trim().split("\n")
         .map(line => line.trim())
         .filter(line => line.length > 0)
@@ -142,7 +142,7 @@ async function findAllMatching(workspace: string, name: string): Promise<TaskInf
     const allTasks = await getAllTasks(workspace);
     const normalizedSearch = normalizeTaskName(name);
     const matches: TaskInfo[] = [];
-    
+
     for (const result of allTasks) {
         for (const task of result.tasks) {
             const normalizedTitle = normalizeTaskName(task.title);
@@ -151,7 +151,7 @@ async function findAllMatching(workspace: string, name: string): Promise<TaskInf
             }
         }
     }
-    
+
     return matches;
 }
 
@@ -171,7 +171,7 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
     // Build list of folders to search
     for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
         const folderPath = resolve(TASKS_ROOT, workspace, folder);
-        
+
         // List files in the folder
         const { readdir } = await import("node:fs/promises");
         let files: string[];
@@ -180,12 +180,12 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
         } catch {
             continue;
         }
-        
+
         // Find matching file
         const normalizedName = normalizeTaskName(name);
         for (const file of files) {
             if (!file.endsWith(".md")) continue;
-            
+
             // Check if filename starts with the normalized task name
             const fileNameLower = file.toLowerCase();
             if (fileNameLower.startsWith(normalizedName) || fileNameLower.includes(normalizedName)) {
@@ -210,16 +210,16 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
  */
 async function runScript(script: string, workspace: string, args: Record<string, string | boolean | undefined>): Promise<string> {
     const scriptPath = resolve(__dirname, "scripts", `${script}.ps1`);
-    
+
     const cmdParts: string[] = [];
-    
+
     // Add workspace
     cmdParts.push(`-Workspace ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${Buffer.from(workspace, "utf16le").toString("base64")}')))`);
-    
+
     // Add other args
     for (const [k, v] of Object.entries(args)) {
         if (v === undefined) continue;
-        
+
         if (typeof v === "boolean" && v) {
             // Switch parameter - just add the flag
             cmdParts.push(`-${k}`);
@@ -229,12 +229,12 @@ async function runScript(script: string, workspace: string, args: Record<string,
             cmdParts.push(`-${k} ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${encoded}')))`);
         }
     }
-    
+
     // Use call operator (&) with -Command for proper argument handling
     const cmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${scriptPath.replace(/'/g, "''")}' ${cmdParts.join(' ')}"`;
-    
+
     const { stdout, stderr } = await execAsync(cmd, { encoding: "utf8" });
-    
+
     if (stderr && !stdout) {
         throw new Error(stderr);
     }
@@ -247,7 +247,7 @@ async function runScript(script: string, workspace: string, args: Record<string,
 async function findTask(workspace: string, name: string): Promise<TaskInfo | null> {
     const allTasks = await getAllTasks(workspace);
     const normalizedSearch = normalizeTaskName(name);
-    
+
     for (const result of allTasks) {
         for (const task of result.tasks) {
             const normalizedTitle = normalizeTaskName(task.title);
@@ -256,7 +256,7 @@ async function findTask(workspace: string, name: string): Promise<TaskInfo | nul
             }
         }
     }
-    
+
     // Partial match
     for (const result of allTasks) {
         for (const task of result.tasks) {
@@ -265,7 +265,7 @@ async function findTask(workspace: string, name: string): Promise<TaskInfo | nul
             }
         }
     }
-    
+
     return null;
 }
 
@@ -284,12 +284,12 @@ export default function (pi: ExtensionAPI) {
 
     // Register task message renderer
     registerTaskRenderer(pi);
-    
+
     // Session start: notify about active tasks
     pi.on("session_start", async (_event, ctx) => {
         const workspace = getWorkspaceName(ctx.cwd);
         const activeTasks = (await listTasks(workspace, "Active"));
-        
+
         if (activeTasks.length === 0) {
             // No active tasks - check backlog
             const backlogTasks = (await listTasks(workspace, "Backlog"));
@@ -308,17 +308,17 @@ export default function (pi: ExtensionAPI) {
     // Permission gate: block writes to tasks folder, allow reads
     pi.on("tool_call", async (event, ctx) => {
         const toolName = event.toolName;
-        
+
         // Only block write/edit/bash to tasks folder, allow read
         if (["write", "edit", "bash"].includes(toolName)) {
             let path: string | undefined;
-            
+
             if (toolName === "bash" && "command" in event.input) {
                 path = event.input.command as string | undefined;
             } else if ("path" in event.input) {
                 path = event.input.path as string | undefined;
             }
-            
+
             if (path) {
                 const resolved = resolve(ctx.cwd, path);
                 if (resolved.startsWith(TASKS_ROOT) || resolved.replace(/\\/g, "/").startsWith(TASKS_ROOT.replace(/\\/g, "/"))) {
@@ -551,7 +551,7 @@ export default function (pi: ExtensionAPI) {
             // Interactive picker
             const openTasks = await getOpenTasks(workspace);
             const items: { value: string; label: string }[] = [];
-            
+
             for (const result of openTasks) {
                 for (const task of result.tasks) {
                     items.push({
@@ -578,13 +578,8 @@ export default function (pi: ExtensionAPI) {
                 const taskName = selected.value.split(":")[1];
                 const content = await getTaskContent(workspace, taskName);
                 if (content) {
-                    // Display the task content as a message in the conversation
-                    pi.sendMessage({
-                        customType: "task",
-                        content: content,
-                        display: true,
-                        details: { name: taskName }
-                    }, { deliverAs: "steer" });
+                    // Display the task content as a notification
+                    ctx.ui.notify(`Task: ${taskName}\n\n${content}`, "info");
                 } else {
                     ctx.ui.notify(`Could not read task "${taskName}"`, "error");
                 }
@@ -597,7 +592,7 @@ export default function (pi: ExtensionAPI) {
         description: "Assign a task to Active (use /task <name>)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
-            
+
             if (!args) {
                 // Show active task
                 const activeTasks = await listTasks(workspace, "Active");
@@ -612,12 +607,12 @@ export default function (pi: ExtensionAPI) {
             // Find tasks matching the input
             const matches = await findAllMatching(workspace, args);
             const exactMatch = await findExactMatch(workspace, args);
-            
+
             if (exactMatch) {
                 // Exact match found - select directly
                 const title = exactMatch.title;
                 const taskUUID = exactMatch.uuid;
-                
+
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length > 0 && activeTasks[0].uuid !== taskUUID) {
@@ -627,12 +622,12 @@ export default function (pi: ExtensionAPI) {
                 ctx.ui.notify(`Now active: "${title}"`, "info");
                 return;
             }
-            
+
             if (matches.length === 0) {
                 ctx.ui.notify(`No task found matching "${args}". Use /task-new to create one.`, "error");
                 return;
             }
-            
+
             // No exact match - show disambiguation list with UUIDs
             const items: { value: string; label: string }[] = [];
             for (const task of matches) {
@@ -652,7 +647,7 @@ export default function (pi: ExtensionAPI) {
             if (selected) {
                 const taskUUID = selected.value;
                 const task = matches.find(m => m.uuid === taskUUID);
-                
+
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length > 0 && activeTasks[0].uuid !== taskUUID) {
@@ -670,14 +665,14 @@ export default function (pi: ExtensionAPI) {
         for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
             const folderPath = resolve(TASKS_ROOT, workspace, folder);
             const { readdir } = await import("node:fs/promises");
-            
+
             let files: string[];
             try {
                 files = await readdir(folderPath);
             } catch {
                 continue;
             }
-            
+
             for (const file of files) {
                 if (!file.endsWith(".md")) continue;
                 const filePath = resolve(folderPath, file);
@@ -692,20 +687,20 @@ export default function (pi: ExtensionAPI) {
                 }
             }
         }
-        
+
         // Fallback: try to find by normalized title in filename
         const normalizedName = normalizeTaskName(nameOrUUID);
         for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
             const folderPath = resolve(TASKS_ROOT, workspace, folder);
             const { readdir } = await import("node:fs/promises");
-            
+
             let files: string[];
             try {
                 files = await readdir(folderPath);
             } catch {
                 continue;
             }
-            
+
             for (const file of files) {
                 if (!file.endsWith(".md")) continue;
                 const fileNameLower = file.toLowerCase();
@@ -716,7 +711,7 @@ export default function (pi: ExtensionAPI) {
         }
         return null;
     }
-    
+
     // Get task info by UUID
     async function getTaskByUUID(workspace: string, uuid: string): Promise<TaskInfo | null> {
         const allTasks = await getAllTasks(workspace);
@@ -743,12 +738,12 @@ export default function (pi: ExtensionAPI) {
         description: "Open a task file in the default editor (use /task-open <name>)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
-            
+
             if (!args) {
                 // No args provided - show picker with all tasks
                 const allTasks = await getAllTasks(workspace);
                 const items: { value: string; label: string }[] = [];
-                
+
                 for (const result of allTasks) {
                     for (const task of result.tasks) {
                         items.push({
@@ -757,18 +752,18 @@ export default function (pi: ExtensionAPI) {
                         });
                     }
                 }
-                
+
                 if (items.length === 0) {
                     ctx.ui.notify("No tasks found", "info");
                     return;
                 }
-                
+
                 const choice = await ctx.ui.select("Select a task to open:", items.map(i => i.label));
                 if (!choice) {
                     ctx.ui.notify("Cancelled", "info");
                     return;
                 }
-                
+
                 const selected = items.find((_, i) => items[i].label === choice);
                 if (selected) {
                     const task = await getTaskByUUID(workspace, selected.value);
@@ -785,11 +780,11 @@ export default function (pi: ExtensionAPI) {
                 }
                 return;
             }
-            
+
             // Find tasks matching the input
             const matches = await findAllMatching(workspace, args);
             const exactMatch = await findExactMatch(workspace, args);
-            
+
             if (exactMatch) {
                 // Exact match found - open directly
                 const filePath = await findTaskPath(workspace, exactMatch.uuid);
@@ -800,12 +795,12 @@ export default function (pi: ExtensionAPI) {
                 }
                 return;
             }
-            
+
             if (matches.length === 0) {
                 ctx.ui.notify(`No task found matching "${args}"`, "error");
                 return;
             }
-            
+
             // No exact match - show disambiguation list with UUIDs
             const items: { value: string; label: string }[] = [];
             for (const task of matches) {
@@ -814,13 +809,13 @@ export default function (pi: ExtensionAPI) {
                     label: `[${task.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                 });
             }
-            
+
             const choice = await ctx.ui.select(`${matches.length} tasks matching "${args}":`, items.map(i => i.label));
             if (!choice) {
                 ctx.ui.notify("Cancelled", "info");
                 return;
             }
-            
+
             const selected = items.find((_, i) => items[i].label === choice);
             if (selected) {
                 const task = await getTaskByUUID(workspace, selected.value);
@@ -928,35 +923,35 @@ export default function (pi: ExtensionAPI) {
         description: "Assign a task to Active and instruct agent to work on it (use /task-work <name> or /task-work all)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
-            
+
             // Check for "all" argument
             if (args === "all") {
                 const backlogTasks = await listTasks(workspace, "Backlog");
-                
+
                 if (backlogTasks.length === 0) {
                     ctx.ui.notify("No tasks in Backlog", "info");
                     return;
                 }
-                
+
                 const confirmed = await ctx.ui.confirm(
                     "Batch Mode",
                     `Work on ${backlogTasks.length} task(s) from Backlog?`
                 );
-                
+
                 if (!confirmed) {
                     ctx.ui.notify("Cancelled", "info");
                     return;
                 }
-                
+
                 // Set batch state and start processing
                 batchMode = true;
                 batchTasks = backlogTasks;
                 batchIndex = 0;
-                
+
                 await processNextBatchTask(workspace, ctx);
                 return;
             }
-            
+
             // If no args, check active tasks or show all tasks
             if (!args) {
                 const activeTasks = await listTasks(workspace, "Active");
@@ -964,7 +959,7 @@ export default function (pi: ExtensionAPI) {
                     // No active task - show all tasks like /task-complete does
                     const openTasks = await getOpenTasks(workspace);
                     const items: { value: string; label: string }[] = [];
-                    
+
                     for (const result of openTasks) {
                         for (const task of result.tasks) {
                             items.push({
@@ -973,18 +968,18 @@ export default function (pi: ExtensionAPI) {
                             });
                         }
                     }
-                    
+
                     if (items.length === 0) {
                         ctx.ui.notify("No tasks found", "info");
                         return;
                     }
-                    
+
                     const choice = await ctx.ui.select("Select a task to work on:", items.map(i => i.label));
                     if (!choice) {
                         ctx.ui.notify("Cancelled", "info");
                         return;
                     }
-                    
+
                     const selected = items.find((_, i) => items[i].label === choice);
                     if (selected) {
                         await assignTaskToAgent(workspace, selected.value, ctx);
@@ -1002,17 +997,17 @@ export default function (pi: ExtensionAPI) {
 
             const matches = await findAllMatching(workspace, args);
             const exactMatch = await findExactMatch(workspace, args);
-            
+
             if (exactMatch) {
                 await assignTaskToAgent(workspace, exactMatch.uuid, ctx);
                 return;
             }
-            
+
             if (matches.length === 0) {
                 ctx.ui.notify(`No task found matching "${args}"`, "error");
                 return;
             }
-            
+
             const items: { value: string; label: string }[] = matches.map(task => ({
                 value: task.uuid,
                 label: `[${task.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
@@ -1042,24 +1037,24 @@ export default function (pi: ExtensionAPI) {
             ctx.ui.notify(`Batch complete: ${count} tasks processed`, "info");
             return;
         }
-        
+
         const currentTask = batchTasks[batchIndex];
-        
+
         // Move any existing Active to Backlog
         const activeTasks = await listTasks(workspace, "Active");
         if (activeTasks.length > 0) {
             await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
         }
-        
+
         // Move current batch task to Active
         await runScript("move-task", workspace, { UUID: currentTask.uuid, NewFolder: "Active" });
-        
+
         // Get task content
         const content = await getTaskContent(workspace, currentTask.title);
         if (content) {
             const taskNum = batchIndex + 1;
             const totalTasks = batchTasks.length;
-            
+
             const messageContent = `Continuing Batch: Task ${taskNum} of ${totalTasks}
 
 Work on the following task:
@@ -1076,7 +1071,7 @@ ${content}
 5. This message IS the continuation signal - after submitting to QA, the next task will arrive automatically. Do NOT wait for any other input.
 
 ---`;
-            
+
             // Use sendMessage with triggerTurn to force a new agent turn
             pi.sendMessage({
                 customType: "batch-continue",
@@ -1086,7 +1081,7 @@ ${content}
                 triggerTurn: true,
             });
         }
-        
+
         ctx.ui.notify(`Now working on: "${currentTask.title}" (${batchIndex + 1}/${batchTasks.length})`, "info");
     }
 
@@ -1099,18 +1094,18 @@ ${content}
             task = result.tasks.find(t => t.uuid === uuid);
             if (task) break;
         }
-        
+
         if (!task) {
             ctx.ui.notify(`Task with UUID ${uuid.substring(0, 8)} not found`, "error");
             return;
         }
-        
+
         const activeTasks = await listTasks(workspace, "Active");
         if (activeTasks.length > 0 && activeTasks[0].uuid !== uuid) {
             await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
         }
         await runScript("move-task", workspace, { UUID: uuid, NewFolder: "Active" });
-        
+
         const content = await getTaskContent(workspace, task.title);
         if (content) {
             // Send task content with triggerTurn to start the agent
@@ -1135,7 +1130,7 @@ ${content}
                 triggerTurn: true,
             });
         }
-        
+
         ctx.ui.notify(`Now working on: "${task.title}"`, "info");
     }
 
@@ -1144,27 +1139,27 @@ ${content}
         description: "Submit active task to QA (use /submit-qa <message>)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
-            
+
             const activeTasks = await listTasks(workspace, "Active");
             if (activeTasks.length === 0) {
                 ctx.ui.notify("No active task to submit to QA", "error");
                 return;
             }
-            
+
             const taskUUID = activeTasks[0].uuid;
             const taskTitle = activeTasks[0].title;
-            
+
             // Move to user-qa folder
             await runScript("move-task", workspace, { UUID: taskUUID, NewFolder: "user-qa" });
-            
+
             // Append QA submission note
             const qaNote = args
                 ? `\n## QA Submission\n${args}\n`
                 : `\n## QA Submission\nSubmitted to QA.\n`;
             await runScript("append-task", workspace, { UUID: taskUUID, Content: qaNote });
-            
+
             ctx.ui.notify(`Submitted "${taskTitle}" to QA`, "info");
-            
+
             // If in batch mode, process next task
             if (batchMode) {
                 batchIndex++;
@@ -1178,12 +1173,12 @@ ${content}
         description: "Mark a task as complete (use /task-complete <name>)",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
-            
+
             // If no args, list all non-closed tasks for selection
             if (!args) {
                 const openTasks = await getOpenTasks(workspace);
                 const items: { value: string; label: string }[] = [];
-                
+
                 for (const result of openTasks) {
                     for (const task of result.tasks) {
                         items.push({
@@ -1192,18 +1187,18 @@ ${content}
                         });
                     }
                 }
-                
+
                 if (items.length === 0) {
                     ctx.ui.notify("No tasks found", "info");
                     return;
                 }
-                
+
                 const choice = await ctx.ui.select("Select a task to complete:", items.map(i => i.label));
                 if (!choice) {
                     ctx.ui.notify("Cancelled", "info");
                     return;
                 }
-                
+
                 const selected = items.find((_, i) => items[i].label === choice);
                 if (selected) {
                     await completeTask(workspace, selected.value, ctx);
@@ -1213,21 +1208,21 @@ ${content}
 
             // Find tasks matching the input
             const matches = await findAllMatching(workspace, args);
-            
+
             // Check for exact match
             const exactMatch = await findExactMatch(workspace, args);
-            
+
             if (exactMatch) {
                 // Exact match found - process directly
                 await completeTask(workspace, exactMatch.uuid, ctx);
                 return;
             }
-            
+
             if (matches.length === 0) {
                 ctx.ui.notify(`No task found matching "${args}"`, "error");
                 return;
             }
-            
+
             // No exact match - show disambiguation list with UUIDs
             const items: { value: string; label: string }[] = [];
             for (const task of matches) {
@@ -1249,7 +1244,7 @@ ${content}
             }
         },
     });
-    
+
     // Helper to complete a task (takes UUID)
     async function completeTask(workspace: string, uuid: string, ctx: any) {
         // Find task by UUID
@@ -1259,21 +1254,21 @@ ${content}
             task = result.tasks.find(t => t.uuid === uuid);
             if (task) break;
         }
-        
+
         if (!task) {
             ctx.ui.notify(`Task with UUID ${uuid.substring(0, 8)} not found`, "error");
             return;
         }
-        
+
         const title = task.title;
-        
+
         // Move to Closed folder (with AllowClosed flag)
         await runScript("move-task", workspace, { UUID: uuid, NewFolder: "Closed", AllowClosed: true });
-        
+
         // Append completion note
         const qaNote = `\n## Completed\nTask marked as complete.`;
         await runScript("append-task", workspace, { UUID: uuid, Content: qaNote });
-        
+
         ctx.ui.notify(`Moved "${title}" to Closed`, "info");
     }
 }

@@ -27,6 +27,7 @@ import type {
   BeforeProviderRequestEvent,
 } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
+import { Input } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -574,9 +575,27 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
           return;
         }
 
-        // Prompt for task
-        const task = await ctx.ui.input(`Task for ${targetAgent.name}:`, {
-          placeholder: "What should this agent do?",
+        // Prompt for task using custom input component
+        const task = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+          const input = new Input();
+          input.focused = true;
+
+          // Handle Enter via onSubmit callback
+          input.onSubmit = (text) => done(text);
+
+          return {
+            render: (w) => {
+              const prompt = theme.fg("accent", `Task for ${targetAgent.name}:`);
+              const placeholder = theme.fg("dim", "What should this agent do?");
+              const inputLine = input.render(w)[0] || placeholder;
+              return [prompt, inputLine];
+            },
+            invalidate: () => input.invalidate(),
+            handleInput: (data) => {
+              input.handleInput(data);
+              tui.requestRender();
+            },
+          };
         });
 
         // User cancelled or provided empty task
