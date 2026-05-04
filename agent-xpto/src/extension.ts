@@ -290,17 +290,4 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 			}
 		},
 	});
-
-	// Show current agent
-	pi.registerShortcut(Key.alt("d"), {
-		description: "Alt+D: Show current agent",
-		handler: async (ctx: ExtensionContext) => {
-			const agent = getCurrentAgent();
-			if (agent) {
-				const model = agent.model ? ` [${agent.model.model}]` : "";
-				const thinking = agent.thinkingLevel ? ` | Thinking: ${agent.thinkingLevel}` : "";
-				ctx.ui.notify(`Current: ${agent.name}${model}${thinking}`, "info");
-			}
-		},
-	});
 }

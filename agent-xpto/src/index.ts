@@ -18,8 +18,7 @@
  * - /call <agent-id> <task> - Call another agent with a task
  * - Ctrl+Shift+A - Cycle to next agent
  * - Ctrl+Shift+S - Open agent selector
- * - Ctrl+Shift+D - Show current agent
- */
+  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createAgentSelectorExtension } from "./extension.js";

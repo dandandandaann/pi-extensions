@@ -152,7 +152,6 @@ You are a planning subagent. Your job is to turn requirements into concrete plan
 |----------|--------|
 | `Ctrl+Shift+A` | Cycle to next agent |
 | `Ctrl+Shift+S` | Open agent selector |
-| `Ctrl+Shift+D` | Show current agent info |
 
 ## Architecture
 
@@ -160,7 +159,6 @@ You are a planning subagent. Your job is to turn requirements into concrete plan
 
 1. **Agent Loader** - Loads agents from `.md` files in `~/.pi/agent/agents/`
 2. **Agent State Manager** - Tracks current agent and handles switching
-3. **Status Bar Display** - Shows current agent in footer
 4. **Tool Filter** - Intercepts and blocks disabled tools
 5. **System Prompt Injector** - Adds agent-specific instructions
 6. **Model & Thinking Level Controller** - Applies agent preferences
