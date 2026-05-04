@@ -52,7 +52,7 @@ Agents are defined as markdown files in `~/.pi/agent/agents/`. Each `.md` file r
 ```markdown
 ---
 name: ☁️ Default
-description: General purpose coding assistant
+purpose: General purpose coding assistant
 tools:
   read: true
   grep: true
@@ -60,7 +60,7 @@ tools:
   bash: true
   write: true
   edit: true
-model: minimax/MiniMax-M2.7
+model: openai/ChatGPT3.1
 thinking: medium
 ---
 
@@ -69,10 +69,10 @@ You are a versatile coding assistant. Help users write, review, and debug code.
 
 ### Frontmatter Fields
 
-| Field | Type | Description |
+| Field | Type | Purpose |
 |-------|------|-------------|
 | `name` | string | Display name for the agent (required) |
-| `description` | string | Brief description of the agent's role |
+| `purpose` | string | Brief information on the agent's role |
 | `tools` | object | Tool permissions (true/false for each tool) |
 | `model` | string | Model in `provider/model` format (e.g., `minimax/MiniMax-M2.7`) |
 | `thinking` | string | Thinking level: "off", "minimal", "low", "medium", "high", "xhigh" |
@@ -126,46 +126,6 @@ thinking: high
 ---
 
 You are a planning subagent. Your job is to turn requirements into concrete plans.
-```
-
-#### scout.md
-
-```markdown
----
-name: 🔍 Scout
-description: Fast codebase reconnaissance
-tools:
-  read: true
-  grep: true
-  find: true
-  ls: true
-  bash: false
-  write: false
-  edit: false
-thinking: low
----
-
-You are a fast reconnaissance agent. Quickly explore and summarize codebases.
-```
-
-#### worker.md
-
-```markdown
----
-name: ⚙️ Worker
-description: General implementation agent
-tools:
-  read: true
-  write: true
-  edit: true
-  bash: true
-  grep: true
-  find: true
-model: minimax/MiniMax-M2.7
-thinking: medium
----
-
-You are a general implementation agent. Write, modify, and debug code.
 ```
 
 ## Settings

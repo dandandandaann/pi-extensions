@@ -35,7 +35,7 @@ function getAgentsDir(): string {
 interface ParsedMarkdownAgent {
 	id: string;
 	name: string;
-	description?: string;
+	purpose?: string;
 	systemPrompt: string;
 	tools: Record<string, boolean>;
 	model?: { provider: string; model: string };
@@ -123,7 +123,7 @@ function parseMarkdownAgent(filePath: string, fileName: string): ParsedMarkdownA
 		return {
 			id,
 			name: String(metadata.name || id),
-			description: metadata.description ? String(metadata.description) : undefined,
+			purpose: metadata.purpose ? String(metadata.purpose) : undefined,
 			systemPrompt: body,
 			tools,
 			model,
@@ -139,7 +139,7 @@ function convertParsedToAgentConfig(parsed: ParsedMarkdownAgent): AgentConfig {
 	return {
 		id: parsed.id,
 		name: parsed.name,
-		description: parsed.description,
+		purpose: parsed.purpose,
 		systemPrompt: parsed.systemPrompt,
 		tools: parsed.tools,
 		model: parsed.model,

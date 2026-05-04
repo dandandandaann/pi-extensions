@@ -34,7 +34,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 export interface AgentConfig {
 	id: string;
 	name: string;
-	description?: string;
+	purpose?: string;
 	systemPrompt?: string;
 	tools: AgentTools;
 	model?: ModelConfig;

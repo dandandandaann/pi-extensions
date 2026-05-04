@@ -64,7 +64,7 @@ const AGENTS_SUBDIR = "agents";
 
 const DEFAULT_SYSTEM_PROMPT_HEADER = `# Agent Configuration: {agentName}
 
-{agentDescription}
+{agentPurpose}
 
 ## Your Capabilities
 {capabilities}
@@ -118,7 +118,7 @@ function buildRestrictionList(agent: AgentConfig): string {
 function buildAgentSystemPrompt(agent: AgentConfig): string {
 	const header = DEFAULT_SYSTEM_PROMPT_HEADER
 		.replace("{agentName}", agent.name)
-		.replace("{agentDescription}", agent.description || agent.systemPrompt || "Specialized agent")
+		.replace("{agentPurpose}", agent.purpose || agent.systemPrompt || "Specialized agent")
 		.replace("{capabilities}", buildCapabilityList(agent))
 		.replace("{restrictions}", buildRestrictionList(agent));
 
@@ -235,47 +235,9 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 				modifications.systemPrompt = `${agentPrompt}\n\n${event.systemPrompt}`;
 			}
 
-			// Enforce agent model
-			if (agent.model) {
-				const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
-				if (model) {
-					await pi.setModel(model);
-				}
-			}
-
 			return modifications;
 		},
 	);
-
-	// Enforce model before provider request
-	pi.on("before_provider_request", async (_event: BeforeProviderRequestEvent, ctx: ExtensionContext) => {
-		const agent = getCurrentAgent();
-
-		if (agent.model) {
-			const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
-			if (model) {
-				await pi.setModel(model);
-			}
-		}
-
-		return undefined;
-	});
-
-	// Enforce model on every turn
-	pi.on("turn_start", async (_event: any, ctx: ExtensionContext) => {
-		const agent = getCurrentAgent();
-
-		if (agent.model) {
-			const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
-			if (model) {
-				await pi.setModel(model);
-			}
-		}
-
-		if (agent.thinkingLevel) {
-			pi.setThinkingLevel(agent.thinkingLevel);
-		}
-	});
 
 	// Tool call filtering
 	pi.on("tool_call", async (event: ToolCallEvent, _ctx: ExtensionContext) => {
@@ -359,13 +321,111 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 
 	// Main agent command - show/select agents
 	pi.registerCommand("agent", {
-		description: "Show or switch between agents",
-		handler: async (_args: string, ctx: ExtensionContext) => {
+		description: "Show or switch between agents. Usage: /agent [agent-id]",
+		handler: async (args: string, ctx: ExtensionContext) => {
 			if (!agents.length) {
 				ctx.ui.notify("No agents configured", "warning");
 				return;
 			}
 
+			const trimmedArgs = args.trim();
+
+			// If argument provided, try to match and switch directly
+			if (trimmedArgs) {
+				const targetAgent = getAgentByIdOrName(trimmedArgs);
+				if (targetAgent) {
+					const newAgent = switchToAgent(targetAgent.id);
+					if (newAgent) {
+						if (settings.showInStatusBar) {
+							ctx.ui.setStatus("agent-xpto", `Agent: ${newAgent.name}`);
+						}
+						ctx.ui.notify(`Switched to ${newAgent.name}`, "info");
+
+						// Apply model and thinking level
+						if (newAgent.model) {
+							const model = ctx.modelRegistry.find(newAgent.model.provider, newAgent.model.model);
+							if (model) {
+								await pi.setModel(model);
+							}
+						}
+						if (newAgent.thinkingLevel) {
+							pi.setThinkingLevel(newAgent.thinkingLevel);
+						}
+					}
+					return;
+				} else {
+					// No match - show list with warning
+					const currentAgent = getCurrentAgent();
+					const items: string[] = [];
+
+					for (let i = 0; i < agents.length; i++) {
+						const agent = agents[i];
+						const marker = agent.id === currentAgent.id ? "▸ " : "  ";
+						const model = agent.model ? ` (${agent.model.model})` : "";
+						const lines = [`${marker}[${i + 1}] ${agent.name}${model}`];
+						if (agent.purpose) {
+							lines.push(`      ${agent.purpose}`);
+						}
+						items.push(lines.join("\n"));
+					}
+
+					items.push("---");
+					items.push("[C] Cycle to next agent");
+
+					ctx.ui.notify(`Unknown agent: "${trimmedArgs}"`, "warning");
+					const selected = await ctx.ui.select("Select Agent", items);
+
+					if (!selected) return;
+
+					// Handle selection (same as below)
+					if (selected === "[C] Cycle to next agent") {
+						const nextAgent = cycleAgent();
+						if (settings.showInStatusBar) {
+							ctx.ui.setStatus("agent-xpto", `Agent: ${nextAgent.name}`);
+						}
+						ctx.ui.notify(`Switched to ${nextAgent.name}`, "info");
+
+						if (nextAgent.model) {
+							const model = ctx.modelRegistry.find(nextAgent.model.provider, nextAgent.model.model);
+							if (model) {
+								await pi.setModel(model);
+							}
+						}
+						if (nextAgent.thinkingLevel) {
+							pi.setThinkingLevel(nextAgent.thinkingLevel);
+						}
+						return;
+					}
+
+					const firstLine = selected.split("\n")[0];
+					const match = firstLine.match(/\[(\d+)\]\s+(.+)/);
+					if (match) {
+						const index = parseInt(match[1], 10) - 1;
+						if (index >= 0 && index < agents.length) {
+							const newAgent = switchToAgent(agents[index].id);
+							if (newAgent) {
+								if (settings.showInStatusBar) {
+									ctx.ui.setStatus("agent-xpto", `Agent: ${newAgent.name}`);
+								}
+								ctx.ui.notify(`Switched to ${newAgent.name}`, "info");
+
+								if (newAgent.model) {
+									const model = ctx.modelRegistry.find(newAgent.model.provider, newAgent.model.model);
+									if (model) {
+										await pi.setModel(model);
+									}
+								}
+								if (newAgent.thinkingLevel) {
+									pi.setThinkingLevel(newAgent.thinkingLevel);
+								}
+							}
+						}
+					}
+					return;
+				}
+			}
+
+			// No argument - show interactive picker
 			const currentAgent = getCurrentAgent();
 			const items: string[] = [];
 
@@ -374,8 +434,8 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 				const marker = agent.id === currentAgent.id ? "▸ " : "  ";
 				const model = agent.model ? ` (${agent.model.model})` : "";
 				const lines = [`${marker}[${i + 1}] ${agent.name}${model}`];
-				if (agent.description) {
-					lines.push(`      ${agent.description}`);
+				if (agent.purpose) {
+					lines.push(`      ${agent.purpose}`);
 				}
 				items.push(lines.join("\n"));
 			}
@@ -455,8 +515,8 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 				const thinking = agent.thinkingLevel ? ` thinking: ${agent.thinkingLevel}` : "";
 				lines.push(`${marker}${agent.name}${model}${thinking}`);
 
-				if (agent.description) {
-					lines.push(`   ${agent.description}`);
+				if (agent.purpose) {
+					lines.push(`   ${agent.purpose}`);
 				}
 
 				const enabledTools = getEnabledToolNames(agent);
@@ -484,10 +544,10 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
 				}
 
 				// Build picker items as strings (ctx.ui.select expects string arrays)
-				// Format: "[agent-id] name (model) - description"
+				// Format: "[agent-id] name (model) - purpose"
 				const items: string[] = agents.map((agent) => {
 					const model = agent.model ? ` (${agent.model.model})` : "";
-					const desc = agent.description ? ` - ${agent.description}` : "";
+					const desc = agent.purpose ? ` - ${agent.purpose}` : "";
 					return `[${agent.id}] ${agent.name}${model}${desc}`;
 				});
 
