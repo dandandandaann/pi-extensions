@@ -11,6 +11,7 @@ import type {
 	ToolCallEvent,
 	BeforeAgentStartEvent,
 } from "@mariozechner/pi-coding-agent";
+import { Key } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
 import type { AgentConfig } from "./types/index.js";
@@ -255,7 +256,7 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	// ============================================================================
 
 	// Cycle through agents
-	pi.registerShortcut("ctrl+shift+a", {
+	pi.registerShortcut(Key.ctrlShift("a"), {
 		description: "Cycle to next agent",
 		handler: async (ctx: ExtensionContext) => {
 			cycleToNextAgent(state, pi, ctx, settings);
@@ -263,7 +264,7 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	});
 
 	// Open agent selector
-	pi.registerShortcut("ctrl+shift+s", {
+	pi.registerShortcut(Key.ctrlShift("s"), {
 		description: "Open agent selector",
 		handler: async (ctx: ExtensionContext) => {
 			if (!agents.length) {
@@ -291,7 +292,7 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	});
 
 	// Show current agent
-	pi.registerShortcut("ctrl+shift+d", {
+	pi.registerShortcut(Key.ctrlShift("d"), {
 		description: "Show current agent",
 		handler: async (ctx: ExtensionContext) => {
 			const agent = getCurrentAgent();
