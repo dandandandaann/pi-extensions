@@ -256,7 +256,7 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	// ============================================================================
 
 	// Cycle through agents
-	pi.registerShortcut(Key.ctrlShift("a"), {
+	pi.registerShortcut(Key.alt("a"), {
 		description: "Cycle to next agent",
 		handler: async (ctx: ExtensionContext) => {
 			cycleToNextAgent(state, pi, ctx, settings);
@@ -264,7 +264,7 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	});
 
 	// Open agent selector
-	pi.registerShortcut(Key.ctrlShift("s"), {
+	pi.registerShortcut(Key.alt("s"), {
 		description: "Open agent selector",
 		handler: async (ctx: ExtensionContext) => {
 			if (!agents.length) {
@@ -292,7 +292,7 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	});
 
 	// Show current agent
-	pi.registerShortcut(Key.ctrlShift("d"), {
+	pi.registerShortcut(Key.alt("d"), {
 		description: "Show current agent",
 		handler: async (ctx: ExtensionContext) => {
 			const agent = getCurrentAgent();
