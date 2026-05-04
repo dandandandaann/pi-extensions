@@ -170,6 +170,64 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
   }
 
   // ============================================================================
+  // UI Helper Functions
+  // ============================================================================
+
+  function buildAgentPickerItems(currentAgent: AgentConfig): string[] {
+    const items: string[] = [];
+    for (let i = 0; i < agents.length; i++) {
+      const agent = agents[i];
+      const marker = agent.id === currentAgent.id ? "▸ " : "  ";
+      const model = agent.model ? ` (${agent.model.model})` : "";
+      const lines = [`${marker}[${i + 1}] ${agent.name}${model}`];
+      if (agent.purpose) {
+        lines.push(`      ${agent.purpose}`);
+      }
+      items.push(lines.join("\n"));
+    }
+    items.push("---");
+    items.push("[C] Cycle to next agent");
+    return items;
+  }
+
+  function applyAgentConfig(agent: AgentConfig, ctx: ExtensionContext): void {
+    if (settings.showInStatusBar) {
+      ctx.ui.setStatus("agent-xpto", `Agent: ${agent.name}`);
+    }
+    ctx.ui.notify(`Switched to ${agent.name}`, "info");
+
+    if (agent.model) {
+      const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);
+      if (model) {
+        pi.setModel(model);
+      }
+    }
+    if (agent.thinkingLevel) {
+      pi.setThinkingLevel(agent.thinkingLevel);
+    }
+  }
+
+  function handleAgentSelection(selected: string, ctx: ExtensionContext): void {
+    if (selected === "[C] Cycle to next agent") {
+      const nextAgent = cycleAgent();
+      applyAgentConfig(nextAgent, ctx);
+      return;
+    }
+
+    const firstLine = selected.split("\n")[0];
+    const match = firstLine.match(/\[(\d+)\]\s+(.+)/);
+    if (match) {
+      const index = parseInt(match[1], 10) - 1;
+      if (index >= 0 && index < agents.length) {
+        const newAgent = switchToAgent(agents[index].id);
+        if (newAgent) {
+          applyAgentConfig(newAgent, ctx);
+        }
+      }
+    }
+  }
+
+  // ============================================================================
   // Initialization
   // ============================================================================
 
@@ -337,164 +395,25 @@ export default function agentSelectorExtension(pi: ExtensionAPI) {
         if (targetAgent) {
           const newAgent = switchToAgent(targetAgent.id);
           if (newAgent) {
-            if (settings.showInStatusBar) {
-              ctx.ui.setStatus("agent-xpto", `Agent: ${newAgent.name}`);
-            }
-            ctx.ui.notify(`Switched to ${newAgent.name}`, "info");
-
-            // Apply model and thinking level
-            if (newAgent.model) {
-              const model = ctx.modelRegistry.find(newAgent.model.provider, newAgent.model.model);
-              if (model) {
-                await pi.setModel(model);
-              }
-            }
-            if (newAgent.thinkingLevel) {
-              pi.setThinkingLevel(newAgent.thinkingLevel);
-            }
+            applyAgentConfig(newAgent, ctx);
           }
           return;
         } else {
           // No match - show list with warning
-          const currentAgent = getCurrentAgent();
-          const items: string[] = [];
-
-          for (let i = 0; i < agents.length; i++) {
-            const agent = agents[i];
-            const marker = agent.id === currentAgent.id ? "▸ " : "  ";
-            const model = agent.model ? ` (${agent.model.model})` : "";
-            const lines = [`${marker}[${i + 1}] ${agent.name}${model}`];
-            if (agent.purpose) {
-              lines.push(`      ${agent.purpose}`);
-            }
-            items.push(lines.join("\n"));
-          }
-
-          items.push("---");
-          items.push("[C] Cycle to next agent");
-
           ctx.ui.notify(`Unknown agent: "${trimmedArgs}"`, "warning");
+          const items = buildAgentPickerItems(getCurrentAgent());
           const selected = await ctx.ui.select("Select Agent", items);
-
           if (!selected) return;
-
-          // Handle selection (same as below)
-          if (selected === "[C] Cycle to next agent") {
-            const nextAgent = cycleAgent();
-            if (settings.showInStatusBar) {
-              ctx.ui.setStatus("agent-xpto", `Agent: ${nextAgent.name}`);
-            }
-            ctx.ui.notify(`Switched to ${nextAgent.name}`, "info");
-
-            if (nextAgent.model) {
-              const model = ctx.modelRegistry.find(nextAgent.model.provider, nextAgent.model.model);
-              if (model) {
-                await pi.setModel(model);
-              }
-            }
-            if (nextAgent.thinkingLevel) {
-              pi.setThinkingLevel(nextAgent.thinkingLevel);
-            }
-            return;
-          }
-
-          const firstLine = selected.split("\n")[0];
-          const match = firstLine.match(/\[(\d+)\]\s+(.+)/);
-          if (match) {
-            const index = parseInt(match[1], 10) - 1;
-            if (index >= 0 && index < agents.length) {
-              const newAgent = switchToAgent(agents[index].id);
-              if (newAgent) {
-                if (settings.showInStatusBar) {
-                  ctx.ui.setStatus("agent-xpto", `Agent: ${newAgent.name}`);
-                }
-                ctx.ui.notify(`Switched to ${newAgent.name}`, "info");
-
-                if (newAgent.model) {
-                  const model = ctx.modelRegistry.find(newAgent.model.provider, newAgent.model.model);
-                  if (model) {
-                    await pi.setModel(model);
-                  }
-                }
-                if (newAgent.thinkingLevel) {
-                  pi.setThinkingLevel(newAgent.thinkingLevel);
-                }
-              }
-            }
-          }
+          handleAgentSelection(selected, ctx);
           return;
         }
       }
 
       // No argument - show interactive picker
-      const currentAgent = getCurrentAgent();
-      const items: string[] = [];
-
-      for (let i = 0; i < agents.length; i++) {
-        const agent = agents[i];
-        const marker = agent.id === currentAgent.id ? "▸ " : "  ";
-        const model = agent.model ? ` (${agent.model.model})` : "";
-        const lines = [`${marker}[${i + 1}] ${agent.name}${model}`];
-        if (agent.purpose) {
-          lines.push(`      ${agent.purpose}`);
-        }
-        items.push(lines.join("\n"));
-      }
-
-      items.push("---");
-      items.push("[C] Cycle to next agent");
-
+      const items = buildAgentPickerItems(getCurrentAgent());
       const selected = await ctx.ui.select("Select Agent", items);
-
       if (!selected) return;
-
-      // Handle cycle option
-      if (selected === "[C] Cycle to next agent") {
-        const nextAgent = cycleAgent();
-        if (settings.showInStatusBar) {
-          ctx.ui.setStatus("agent-xpto", `Agent: ${nextAgent.name}`);
-        }
-        ctx.ui.notify(`Switched to ${nextAgent.name}`, "info");
-
-        // Trigger model/thinking level change
-        if (nextAgent.model) {
-          const model = ctx.modelRegistry.find(nextAgent.model.provider, nextAgent.model.model);
-          if (model) {
-            await pi.setModel(model);
-          }
-        }
-        if (nextAgent.thinkingLevel) {
-          pi.setThinkingLevel(nextAgent.thinkingLevel);
-        }
-        return;
-      }
-
-      // Parse selection - extract index from first line of multi-line selection
-      const firstLine = selected.split("\n")[0];
-      const match = firstLine.match(/\[(\d+)\]\s+(.+)/);
-      if (match) {
-        const index = parseInt(match[1], 10) - 1;
-        if (index >= 0 && index < agents.length) {
-          const newAgent = switchToAgent(agents[index].id);
-          if (newAgent) {
-            if (settings.showInStatusBar) {
-              ctx.ui.setStatus("agent-xpto", `Agent: ${newAgent.name}`);
-            }
-            ctx.ui.notify(`Switched to ${newAgent.name}`, "info");
-
-            // Apply model and thinking level
-            if (newAgent.model) {
-              const model = ctx.modelRegistry.find(newAgent.model.provider, newAgent.model.model);
-              if (model) {
-                await pi.setModel(model);
-              }
-            }
-            if (newAgent.thinkingLevel) {
-              pi.setThinkingLevel(newAgent.thinkingLevel);
-            }
-          }
-        }
-      }
+      handleAgentSelection(selected, ctx);
     },
   });
 
