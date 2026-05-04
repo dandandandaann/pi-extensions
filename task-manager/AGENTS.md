@@ -49,7 +49,7 @@ Use the `tasks` tool for all task management:
 | `list` | — | Show all tasks across folders |
 | `create` | `title`, `priority` | Create new task in Backlog (workspace auto-detected) |
 | `move` | `name`, `folder` | Move task to Backlog/Active/Closed |
-| `append` | `name`, `content` | Add content to task |
+| `append` | `uuid`, `content` or `file` | Add content to task |
 | `delete` | `name` | Delete a task |
 | `rename` | `name`, `newTitle` | Rename a task |
 | `search` | `name` | Find task by name |
@@ -68,7 +68,10 @@ tasks(action="create", title="Implement authentication", priority="high")
 tasks(action="move", name="design-auth", folder="Active")
 
 // Add progress notes
-tasks(action="append", name="design-auth", content="## Progress\n- Completed API design")
+tasks(action="append", uuid="abc123...", content="## Progress\n- Completed API design")
+
+// Read content from a file and append to task
+tasks(action="append", uuid="abc123...", file="C:/path/to/content.txt")
 
 // Search for a task
 tasks(action="search", name="auth")

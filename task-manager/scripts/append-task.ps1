@@ -3,7 +3,8 @@ param(
     [string]$Workspace,
     [Parameter(Mandatory=$true)]
     [string]$UUID,
-    [string]$Content
+    [string]$Content,
+    [string]$File
 )
 $TasksRoot = "$HOME/.pi/tasks/$Workspace"
 
@@ -30,6 +31,20 @@ foreach ($folder in @("Backlog", "Active", "user-qa", "Closed")) {
 
 if (-not $FilePath) {
     Write-Error "Task with UUID '$UUID' not found"
+    exit 1
+}
+
+if ($File) {
+    if (Test-Path $File) {
+        $Content = Get-Content -Path $File -Raw -Encoding UTF8
+    } else {
+        Write-Error "File not found: $File"
+        exit 1
+    }
+}
+
+if (-not $Content) {
+    Write-Error "Error: either -Content or -File parameter is required"
     exit 1
 }
 

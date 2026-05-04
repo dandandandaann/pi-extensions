@@ -79,6 +79,7 @@ const TasksParamsSchema = Type.Object({
     name: Type.Optional(Type.String({ description: "Task name (partial match supported)" })),
     folder: Type.Optional(Type.String({ description: "Target folder: Backlog, Active, Closed" })),
     content: Type.Optional(Type.String({ description: "Content to append to task (for append action)" })),
+    file: Type.Optional(Type.String({ description: "File path to read content from (for append action)" })),
     newTitle: Type.Optional(Type.String({ description: "New title (for rename action)" })),
     title: Type.Optional(Type.String({ description: "Task title (for create action)" })),
     priority: Type.Optional(Type.Union([
@@ -338,7 +339,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
         name: "tasks",
         label: "Tasks",
-        description: "Manage tasks. Actions: list (show all), create (new task), move (change folder), append (add content), delete, rename, search (find by name), submit-qa (submit active task to QA)",
+        description: "Manage tasks. Actions: list (show all), create (new task), move (change folder), append (add content, or use --file to specify a file), delete, rename, search (find by name), submit-qa (submit active task to QA)",
         promptSnippet: "Manage project tasks via task tools",
         promptGuidelines: ["Use task tools when asked to work with tasks, list tasks, or assign work"],
         parameters: TasksParamsSchema as any,
@@ -415,13 +416,13 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "append": {
-                        if (!p.uuid || !p.content) {
+                        if (!p.uuid || (!p.content && !p.file)) {
                             return {
-                                content: [{ type: "text", text: "Error: uuid and content required for append" }],
+                                content: [{ type: "text", text: "Error: uuid and content or file required for append" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        await runScript("append-task", workspace, { UUID: p.uuid, Content: p.content });
+                        await runScript("append-task", workspace, { UUID: p.uuid, Content: p.content, File: p.file });
                         return {
                             content: [{ type: "text", text: `Added content to task` }],
                             details: { action: "append" }
