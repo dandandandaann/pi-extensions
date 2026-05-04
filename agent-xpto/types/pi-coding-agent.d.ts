@@ -3,8 +3,9 @@ declare module '@mariozechner/pi-coding-agent' {
     on(event: string, handler: Function): void;
     setModel(model: any): Promise<boolean>;
     setThinkingLevel(level: string): void;
-    registerCommand(config: any): void;
+    registerCommand(name: string, options: any): void;
     registerShortcut(keys: string, config: any): void;
+    registerTool(toolDefinition: any): void;
   }
   
   export interface ExtensionContext {
