@@ -27,6 +27,7 @@ export function registerAgentsCommand(
 
 			for (const agent of agents) {
 				const marker = agent.id === currentAgent?.id ? "▸ " : "  ";
+				const orderStr = agent.order !== undefined ? ` [order: ${agent.order}]` : "";
 				const model = agent.model ? ` [${agent.model.provider}/${agent.model.model}]` : "";
 				const thinking = agent.thinkingLevel ? ` thinking: ${agent.thinkingLevel}` : "";
 				lines.push(`${marker}${agent.name}${model}${thinking}`);

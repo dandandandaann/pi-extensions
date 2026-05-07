@@ -56,14 +56,27 @@ function loadConfig(): { agents: AgentConfig[] } | null {
 
 /**
  * Get all configured agents (from markdown files or legacy JSON config)
+ * Agents are sorted by order property (lower values first)
  */
 export function getAgents(): AgentConfig[] {
 	const markdownAgents = loadMarkdownAgents();
 	if (markdownAgents.length > 0) {
-		return markdownAgents;
+		return sortByOrder(markdownAgents);
 	}
 	const config = loadConfig();
-	return config?.agents ?? [];
+	return sortByOrder(config?.agents ?? []);
+}
+
+/**
+ * Sort agents by order property
+ * Agents without order property are placed at the end
+ */
+function sortByOrder(agents: AgentConfig[]): AgentConfig[] {
+	return [...agents].sort((a, b) => {
+		const orderA = a.order ?? Infinity;
+		const orderB = b.order ?? Infinity;
+		return orderA - orderB;
+	});
 }
 
 /**

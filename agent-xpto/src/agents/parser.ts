@@ -12,6 +12,7 @@ export interface ParsedMarkdownAgent {
 	id: string;
 	name: string;
 	purpose?: string;
+	order?: number;
 	systemPrompt: string;
 	tools: Record<string, boolean>;
 	model?: { provider: string; model: string };
@@ -112,10 +113,13 @@ export function parseMarkdownAgent(content: string, fileName: string): ParsedMar
 			? parseModelString(String(metadata.model))
 			: undefined;
 
+		const order = metadata.order !== undefined ? parseInt(String(metadata.order), 10) : undefined;
+
 		return {
 			id,
 			name: String(metadata.name || id),
 			purpose: metadata.purpose ? String(metadata.purpose) : undefined,
+			order: isNaN(order as number) ? undefined : order,
 			systemPrompt: body,
 			tools,
 			model,
@@ -135,6 +139,7 @@ export function convertParsedToAgentConfig(parsed: ParsedMarkdownAgent): AgentCo
 		id: parsed.id,
 		name: parsed.name,
 		purpose: parsed.purpose,
+		order: parsed.order,
 		systemPrompt: parsed.systemPrompt,
 		tools: parsed.tools,
 		model: parsed.model,

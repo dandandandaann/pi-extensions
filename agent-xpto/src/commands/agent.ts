@@ -15,6 +15,7 @@ export function buildAgentPickerItems(currentAgent: AgentConfig, agents: AgentCo
 	for (let i = 0; i < agents.length; i++) {
 		const agent = agents[i];
 		const marker = agent.id === currentAgent.id ? "▸ " : "  ";
+		const orderStr = agent.order !== undefined ? ` [order: ${agent.order}]` : "";
 		const model = agent.model ? ` (${agent.model.model})` : "";
 		const lines = [`${marker}[${i + 1}] ${agent.name}${model}`];
 		if (agent.purpose) {
