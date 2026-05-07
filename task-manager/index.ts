@@ -339,7 +339,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
         name: "tasks",
         label: "Tasks",
-        description: "Manage tasks. Actions: list (show all), create (new task), move (change folder), append (add content, or use --file to specify a file), delete, rename, search (find by name), submit-qa (submit active task to QA)",
+        description: "Manage tasks. Tasks are NOT accessible as files - always use this tool. Actions: list: Show all tasks grouped by folder. create: Create new task (requires title, optional priority). get: Get task details (requires uuid). append: Add content to task (requires uuid, use content= for short text OR file= for large content). move: Move task to folder (requires uuid, folder: Backlog|Active|Closed). rename: Rename task (requires uuid, newTitle). delete: Delete task (requires uuid). search: Find task by name (requires name). submit-qa: Submit active task to QA (optional message)",
         promptSnippet: "Manage project tasks via task tools",
         promptGuidelines: ["Use task tools when asked to work with tasks, list tasks, or assign work"],
         parameters: TasksParamsSchema as any,
@@ -484,10 +484,18 @@ export default function (pi: ExtensionAPI) {
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const output = await runScript("append-task", workspace, { UUID: p.uuid });
+                        // Find task by UUID and return its content
+                        const task = await getTaskByUUID(workspace, p.uuid);
+                        if (!task) {
+                            return {
+                                content: [{ type: "text", text: `Task with UUID ${p.uuid?.substring(0, 8)} not found` }],
+                                details: { action: "get", found: false }
+                            };
+                        }
+                        const content = await getTaskContent(workspace, task.title);
                         return {
-                            content: [{ type: "text", text: output }],
-                            details: { action: "get" }
+                            content: [{ type: "text", text: content || "Could not read task content" }],
+                            details: { action: "get", found: true, task }
                         };
                     }
 
@@ -713,11 +721,13 @@ export default function (pi: ExtensionAPI) {
         return null;
     }
 
-    // Get task info by UUID
+    // Get task info by UUID or short UUID
     async function getTaskByUUID(workspace: string, uuid: string): Promise<TaskInfo | null> {
+        if (uuid.length < 8) return null; 
+
         const allTasks = await getAllTasks(workspace);
         for (const result of allTasks) {
-            const task = result.tasks.find(t => t.uuid === uuid);
+            const task = result.tasks.find(t => t.uuid.startsWith(uuid));
             if (task) return task;
         }
         return null;
