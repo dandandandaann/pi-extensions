@@ -101,10 +101,23 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	// ============================================================================
 
 	// Initialize on session start
-	pi.on("session_start", async (_event: unknown, ctx: ExtensionContext) => {
+	pi.on("session_start", async (_event: unknown, ctx: ExtensionContext & { sessionManager?: { getEntries: () => any[] } }) => {
 		refreshAgents();
 
-		const agent = state.getCurrentAgent();
+		// Check for target agent from /n command
+		let targetAgent: AgentConfig | null = null;
+		if (ctx.sessionManager) {
+			const entries = ctx.sessionManager.getEntries();
+			const targetEntry = entries.find(
+				(e: any) => e.type === "custom" && e.customType === "agent-xpto-target"
+			);
+			if (targetEntry && targetEntry.data?.targetAgentId) {
+				targetAgent = getAgentByIdOrName(targetEntry.data.targetAgentId);
+			}
+		}
+
+		// If no target from /n, use current agent (default behavior)
+		const agent = targetAgent || state.getCurrentAgent();
 		if (!agent) return;
 
 		// Set model if configured

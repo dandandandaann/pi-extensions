@@ -149,27 +149,36 @@ export function registerNCommand(
 ): void {
 	pi.registerCommand("n", {
 		description: "Start a new session. Optional: /n [agent-id] to start with a specific agent.",
-		handler: async (args: string, ctx: ExtensionContext & { newSession?: (options?: unknown) => Promise<{ cancelled: boolean }> }) => {
+		handler: async (args: string, ctx: ExtensionContext & { newSession?: (options?: { setup?: (manager: any) => void }) => Promise<{ cancelled: boolean }> }) => {
 			const trimmedArgs = args.trim();
 
-			// If agent ID provided, try to switch to it
+			// Capture the target agent ID before newSession (if agent exists)
+			let targetAgentId: string | null = null;
 			if (trimmedArgs) {
 				const agent = getAgentByIdOrName(trimmedArgs);
 				if (agent) {
-					const newAgent = switchToAgent(agent.id);
-					if (newAgent) {
-						applyConfig(newAgent, ctx);
-					}
+					switchToAgent(agent.id);
+					applyConfig(agent, ctx);
+					targetAgentId = agent.id;
 				} else {
-					// Agent doesn't exist - just start new session without switching
 					ctx.ui.notify(`Unknown agent: "${trimmedArgs}" - starting session anyway`, "warning");
 				}
 			}
 
-			// Start new session using built-in /new command behavior
-			// Call newSession if available, otherwise notify user
+			// Start new session, injecting marker if we have a target agent
 			if (ctx.newSession) {
-				await ctx.newSession();
+				await ctx.newSession({
+					setup: (newSessionManager: any) => {
+						if (targetAgentId) {
+							// Inject marker so session_start knows which agent to set
+							newSessionManager.appendEntry({
+								type: "custom",
+								customType: "agent-xpto-target",
+								data: { targetAgentId: targetAgentId },
+							});
+						}
+					},
+				});
 			} else {
 				ctx.ui.notify("Cannot start new session from this context", "error");
 			}
