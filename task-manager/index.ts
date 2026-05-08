@@ -90,6 +90,7 @@ const TasksParamsSchema = Type.Object({
     ], { description: "Task priority (for create action), defaults to medium" })),
     message: Type.Optional(Type.String({ description: "QA submission message (for submit-qa action)" })),
     uuid: Type.Optional(Type.String({ description: "Task UUID (for move, rename, delete, append, get, submit-qa)" })),
+    id: Type.Optional(Type.String({ description: "Task ID (same as uuid)" })),
 });
 type TasksParams = Static<typeof TasksParamsSchema>;
 
@@ -339,7 +340,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
         name: "tasks",
         label: "Tasks",
-        description: "Manage tasks. Tasks are NOT accessible as files - always use this tool. Actions: list: Show all tasks grouped by folder. create: Create new task (requires title, optional priority). get: Get task details (requires uuid). append: Add content to task (requires uuid, use content= for short text OR file= for large content). move: Move task to folder (requires uuid, folder: Backlog|Active|Closed). rename: Rename task (requires uuid, newTitle). delete: Delete task (requires uuid). search: Find task by name (requires name). submit-qa: Submit active task to QA (optional message)",
+        description: "Manage tasks. Tasks are NOT accessible as files - always use this tool. Actions: list: Show all tasks grouped by folder. create: Create new task (requires title, optional priority). get: Get task details (requires uuid or id). append: Add content to task (requires uuid, use content= for short text OR file= for large content). move: Move task to folder (requires uuid, folder: Backlog|Active|Closed). rename: Rename task (requires uuid, newTitle). delete: Delete task (requires uuid). search: Find task by name (requires name). submit-qa: Submit active task to QA (optional message)",
         promptSnippet: "Manage project tasks via task tools",
         promptGuidelines: ["Use task tools when asked to work with tasks, list tasks, or assign work"],
         parameters: TasksParamsSchema as any,
@@ -382,17 +383,18 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "move": {
-                        if (!p.uuid || !p.folder) {
+                        if ((!p.uuid && !p.id) || !p.folder) {
                             return {
-                                content: [{ type: "text", text: "Error: uuid and folder required for move" }],
+                                content: [{ type: "text", text: "Error: uuid, id, and folder required for move" }],
                                 details: { error: "missing parameters" }
                             };
                         }
+                        var taskId = p.uuid || p.id;
 
                         // Check if moving to Active and there's already an active task
                         if (p.folder === "Active") {
                             const activeTasks = await listTasks(workspace, "Active");
-                            if (activeTasks.length > 0 && activeTasks[0].uuid !== p.uuid) {
+                            if (activeTasks.length > 0 && activeTasks[0].uuid !== taskId) {
                                 const proceed = await ctx.ui.confirm(
                                     "Active Task Exists",
                                     `Move "${activeTasks[0].title}" to Backlog and set task to Active?`
@@ -408,7 +410,7 @@ export default function (pi: ExtensionAPI) {
                             }
                         }
 
-                        const result = await runScript("move-task", workspace, { UUID: p.uuid, NewFolder: p.folder });
+                        const result = await runScript("move-task", workspace, { UUID: taskId, NewFolder: p.folder });
                         return {
                             content: [{ type: "text", text: `Moved task to ${p.folder}` }],
                             details: { action: "move", result }
@@ -416,13 +418,14 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "append": {
-                        if (!p.uuid || (!p.content && !p.file)) {
+                        if ((!p.uuid && !p.id) || (!p.content && !p.file)) {
                             return {
                                 content: [{ type: "text", text: "Error: uuid and content or file required for append" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        await runScript("append-task", workspace, { UUID: p.uuid, Content: p.content, File: p.file });
+                        var taskId = p.uuid || p.id;
+                        await runScript("append-task", workspace, { UUID: taskId, Content: p.content, File: p.file });
                         return {
                             content: [{ type: "text", text: `Added content to task` }],
                             details: { action: "append" }
@@ -430,13 +433,14 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "delete": {
-                        if (!p.uuid) {
+                        if (!p.uuid && !p.id) {
                             return {
                                 content: [{ type: "text", text: "Error: uuid required for delete" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const folder = await runScript("delete-task", workspace, { UUID: p.uuid });
+                        var taskId = p.uuid || p.id;
+                        const folder = await runScript("delete-task", workspace, { UUID: taskId });
                         return {
                             content: [{ type: "text", text: `Deleted task from ${folder}` }],
                             details: { action: "delete", folder }
@@ -444,13 +448,14 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "rename": {
-                        if (!p.uuid || !p.newTitle) {
+                        if ((!p.uuid && !p.id) || !p.newTitle) {
                             return {
                                 content: [{ type: "text", text: "Error: uuid and newTitle required for rename" }],
                                 details: { error: "missing parameters" }
                             };
                         }
-                        const folder = await runScript("rename-task", workspace, { UUID: p.uuid, NewTitle: p.newTitle });
+                        var taskId = p.uuid || p.id;
+                        const folder = await runScript("rename-task", workspace, { UUID: taskId, NewTitle: p.newTitle });
                         return {
                             content: [{ type: "text", text: `Renamed to "${p.newTitle}" (${folder})` }],
                             details: { action: "rename", folder }
@@ -478,17 +483,18 @@ export default function (pi: ExtensionAPI) {
                     }
 
                     case "get": {
-                        if (!p.uuid) {
+                        const taskId = p.uuid || p.id;
+                        if (!taskId) {
                             return {
                                 content: [{ type: "text", text: "Error: uuid required for get" }],
                                 details: { error: "missing parameters" }
                             };
                         }
                         // Find task by UUID and return its content
-                        const task = await getTaskByUUID(workspace, p.uuid);
+                        const task = await getTaskByUUID(workspace, taskId);
                         if (!task) {
                             return {
-                                content: [{ type: "text", text: `Task with UUID ${p.uuid?.substring(0, 8)} not found` }],
+                                content: [{ type: "text", text: `Task with UUID ${taskId?.substring(0, 8)} not found` }],
                                 details: { action: "get", found: false }
                             };
                         }
