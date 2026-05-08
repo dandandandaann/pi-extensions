@@ -139,19 +139,20 @@ export function registerAgentCommand(
 }
 
 /**
- * Register the /new command
+ * Register the /n command - start new session with optional agent
  */
-export function registerNewCommand(
+export function registerNCommand(
 	pi: { registerCommand: (name: string, cmd: unknown) => void },
 	getAgentByIdOrName: (id: string) => AgentConfig | undefined,
 	switchToAgent: (id: string) => AgentConfig | null,
 	applyConfig: (agent: AgentConfig, ctx: ExtensionContext) => void
 ): void {
-	pi.registerCommand("new", {
-		description: "Start a new session. Optional: /new [agent-id] to start with a specific agent.",
-		handler: async (args: string, ctx: ExtensionContext) => {
+	pi.registerCommand("n", {
+		description: "Start a new session. Optional: /n [agent-id] to start with a specific agent.",
+		handler: async (args: string, ctx: ExtensionContext & { newSession?: (options?: unknown) => Promise<{ cancelled: boolean }> }) => {
 			const trimmedArgs = args.trim();
 
+			// If agent ID provided, try to switch to it
 			if (trimmedArgs) {
 				const agent = getAgentByIdOrName(trimmedArgs);
 				if (agent) {
@@ -159,10 +160,19 @@ export function registerNewCommand(
 					if (newAgent) {
 						applyConfig(newAgent, ctx);
 					}
+				} else {
+					// Agent doesn't exist - just start new session without switching
+					ctx.ui.notify(`Unknown agent: "${trimmedArgs}" - starting session anyway`, "warning");
 				}
-				// If agent doesn't exist, just continue - new session starts anyway
 			}
-			// Default: new session starts (built-in behavior)
+
+			// Start new session using built-in /new command behavior
+			// Call newSession if available, otherwise notify user
+			if (ctx.newSession) {
+				await ctx.newSession();
+			} else {
+				ctx.ui.notify("Cannot start new session from this context", "error");
+			}
 		},
 	});
 }

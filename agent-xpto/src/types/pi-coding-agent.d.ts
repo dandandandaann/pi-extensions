@@ -24,6 +24,29 @@ declare module "@mariozechner/pi-coding-agent" {
     api: any;
   }
   
+  export interface ExtensionCommandContext extends ExtensionContext {
+    waitForIdle(): Promise<void>;
+    newSession(options?: {
+      parentSession?: string;
+      setup?: (sessionManager: any) => Promise<void> | void;
+      withSession?: (ctx: any) => Promise<void>;
+    }): Promise<{ cancelled: boolean }>;
+    fork(entryId: string, options?: {
+      position?: "before" | "at";
+      withSession?: (ctx: any) => Promise<void>;
+    }): Promise<{ cancelled: boolean }>;
+    navigateTree(targetId: string, options?: {
+      summarize?: boolean;
+      customInstructions?: string;
+      replaceInstructions?: boolean;
+      label?: string;
+    }): Promise<{ cancelled: boolean }>;
+    switchSession(sessionPath: string, options?: {
+      withSession?: (ctx: any) => Promise<void>;
+    }): Promise<{ cancelled: boolean }>;
+    reload(): Promise<void>;
+  }
+  
   export interface ToolCallEvent {
     toolName: string;
   }

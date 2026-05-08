@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A multi-agent system for pi coding agent with per-agent configuration",
   "main": "./src/index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
   "pi": {
     "extensions": ["./src/index.ts"]
   },

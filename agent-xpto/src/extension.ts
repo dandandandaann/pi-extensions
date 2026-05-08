@@ -17,7 +17,7 @@ import { Type } from "typebox";
 import type { AgentConfig } from "./types/index.js";
 import { AgentStateManager, getAgentByIdOrName } from "./agents/index.js";
 import { DEFAULT_SETTINGS, type AgentSettings } from "./config/index.js";
-import { registerAgentCommand, registerAgentsCommand, registerCallCommand, registerNewCommand } from "./commands/index.js";
+import { registerAgentCommand, registerAgentsCommand, registerCallCommand, registerNCommand } from "./commands/index.js";
 import { runSync, formatSpawnResult } from "./spawn/index.js";
 import type { SpawnResult } from "./types/index.js";
 
@@ -251,8 +251,8 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	// /call command
 	registerCallCommand(pi, agents);
 
-	// /new command
-	registerNewCommand(
+	// /n command - start new session with optional agent
+	registerNCommand(
 		pi,
 		getAgentByIdOrName,
 		(id) => state.switchToAgent(id),
