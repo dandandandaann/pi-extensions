@@ -139,7 +139,7 @@ async function getOpenTasks(workspace: string): Promise<ListResult[]> {
 /**
  * Find all tasks matching a name (for disambiguation)
  */
-async function findAllMatching(workspace: string, name: string): Promise<TaskInfo[]> {
+async function findAllMatchingTasks(workspace: string, name: string): Promise<TaskInfo[]> {
     const allTasks = await getAllTasks(workspace);
     const normalizedSearch = normalizeTaskName(name);
     const matches: TaskInfo[] = [];
@@ -159,8 +159,8 @@ async function findAllMatching(workspace: string, name: string): Promise<TaskInf
 /**
  * Find exact match (normalized) or return null
  */
-async function findExactMatch(workspace: string, name: string): Promise<TaskInfo | null> {
-    const matches = await findAllMatching(workspace, name);
+async function findExactMatchTask(workspace: string, name: string): Promise<TaskInfo | null> {
+    const matches = await findAllMatchingTasks(workspace, name);
     const normalizedSearch = normalizeTaskName(name);
     return matches.find(m => normalizeTaskName(m.title) === normalizedSearch) || null;
 }
@@ -614,8 +614,8 @@ export default function (pi: ExtensionAPI) {
             }
 
             // Find tasks matching the input
-            const matches = await findAllMatching(workspace, args);
-            const exactMatch = await findExactMatch(workspace, args);
+            const matches = await findAllMatchingTasks(workspace, args);
+            const exactMatch = await findExactMatchTask(workspace, args);
 
             if (exactMatch) {
                 // Exact match found - select directly
@@ -793,8 +793,8 @@ export default function (pi: ExtensionAPI) {
             }
 
             // Find tasks matching the input
-            const matches = await findAllMatching(workspace, args);
-            const exactMatch = await findExactMatch(workspace, args);
+            const matches = await findAllMatchingTasks(workspace, args);
+            const exactMatch = await findExactMatchTask(workspace, args);
 
             if (exactMatch) {
                 // Exact match found - open directly
@@ -1006,14 +1006,14 @@ export default function (pi: ExtensionAPI) {
                 return;
             }
 
-            const matches = await findAllMatching(workspace, args);
-            const exactMatch = await findExactMatch(workspace, args);
+            const exactMatch = await findExactMatchTask(workspace, args);
 
             if (exactMatch) {
                 await assignTaskToAgent(workspace, exactMatch.uuid, ctx);
                 return;
             }
 
+            const matches = await findAllMatchingTasks(workspace, args);
             if (matches.length === 0) {
                 ctx.ui.notify(`No task found matching "${args}"`, "error");
                 return;
@@ -1218,10 +1218,10 @@ ${content}
             }
 
             // Find tasks matching the input
-            const matches = await findAllMatching(workspace, args);
+            const matches = await findAllMatchingTasks(workspace, args);
 
             // Check for exact match
-            const exactMatch = await findExactMatch(workspace, args);
+            const exactMatch = await findExactMatchTask(workspace, args);
 
             if (exactMatch) {
                 // Exact match found - process directly

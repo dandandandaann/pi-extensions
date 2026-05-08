@@ -15,9 +15,9 @@ import { Key } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
 import type { AgentConfig } from "./types/index.js";
-import { AgentStateManager } from "./agents/index.js";
+import { AgentStateManager, getAgentByIdOrName } from "./agents/index.js";
 import { DEFAULT_SETTINGS, type AgentSettings } from "./config/index.js";
-import { registerAgentCommand, registerAgentsCommand, registerCallCommand } from "./commands/index.js";
+import { registerAgentCommand, registerAgentsCommand, registerCallCommand, registerNewCommand } from "./commands/index.js";
 import { runSync, formatSpawnResult } from "./spawn/index.js";
 import type { SpawnResult } from "./types/index.js";
 
@@ -250,6 +250,14 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 
 	// /call command
 	registerCallCommand(pi, agents);
+
+	// /new command
+	registerNewCommand(
+		pi,
+		getAgentByIdOrName,
+		(id) => state.switchToAgent(id),
+		(agent, ctx) => applyAgentConfig(agent, pi, ctx, settings)
+	);
 
 	// ============================================================================
 	// Keyboard Shortcuts
