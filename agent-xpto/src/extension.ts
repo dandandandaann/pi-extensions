@@ -118,7 +118,12 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 
 		// If no target from /n, use current agent (default behavior)
 		const agent = targetAgent || state.getCurrentAgent();
-		if (!agent) return;
+		if (agent) {
+			// If we found a target from /n marker, actually switch to it in the state manager
+			if (targetAgent) {
+				state.switchToAgent(agent.id);
+			}
+		}
 
 		// Set model if configured
 		if (agent.model) {
