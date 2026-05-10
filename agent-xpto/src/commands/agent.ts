@@ -171,11 +171,7 @@ export function registerNCommand(
 					setup: (newSessionManager: any) => {
 						if (targetAgentId) {
 							// Inject marker so session_start knows which agent to set
-							newSessionManager.appendEntry({
-								type: "custom",
-								customType: "agent-xpto-target",
-								data: { targetAgentId: targetAgentId },
-							});
+							newSessionManager.appendCustomEntry("agent-xpto-target", { targetAgentId: targetAgentId });
 						}
 					},
 				});
