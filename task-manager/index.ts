@@ -358,7 +358,7 @@ export default function (pi: ExtensionAPI) {
                             };
                         }
                         const priority = p.priority || "medium";
-                        const id = await runScript("create-task", workspace, { Title: p.title, Priority: priority });
+                        const id = await runScript("create-task", workspace, { Title: p.title, Priority: priority, Content: p.content });
                         return {
                             content: [{ type: "text", text: `Created task "${p.title}" [${priority}] (${id.substring(0, 8)})` }],
                             details: { action: "create", id, title: p.title, priority, workspace }
@@ -852,11 +852,11 @@ export default function (pi: ExtensionAPI) {
 
     // Register /task-create command - create a new task (alias for /task-new)
     pi.registerCommand("task-create", {
-        description: "Create a new task (use /task-create [-o] <title> [--priority=high])",
+        description: "Create a new task (use /task-create [-o] <title> [--priority=high] [--content='...'])",
         async handler(args, ctx) {
             const workspace = getWorkspaceName(ctx.cwd);
             if (!args) {
-                ctx.ui.notify("Usage: /task-create [-o] <title> [--priority=low|medium|high|critical]", "info");
+                ctx.ui.notify("Usage: /task-create [-o] <title> [--priority=low|medium|high|critical] [--content='...']", "info");
                 return;
             }
 
@@ -877,7 +877,15 @@ export default function (pi: ExtensionAPI) {
                 title = remaining.replace(/--priority=\w+\s*/, "");
             }
 
-            const id = await runScript("create-task", workspace, { Title: title, Priority: priority });
+            // Parse content from args if present
+            let content = "";
+            const contentMatch = title.match(/--content='([^']*)'/);
+            if (contentMatch) {
+                content = contentMatch[1];
+                title = title.replace(/--content='[^']*'\s*/, "");
+            }
+
+            const id = await runScript("create-task", workspace, { Title: title, Priority: priority, Content: content });
             ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "info");
 
             // Open task after creation if -o flag was set

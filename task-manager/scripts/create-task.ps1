@@ -5,7 +5,8 @@ param(
     [string]$Title,
     [string]$Priority = "medium",
     [string]$Folder = "Backlog",
-    [string[]]$Tags = @()
+    [string[]]$Tags = @(),
+    [string]$Content = ""
 )
 $TaskDir = "$HOME/.pi/tasks/$Workspace/$Folder"
 if (-not (Test-Path $TaskDir)) {
@@ -25,7 +26,12 @@ if (Test-Path $Path) {
     }
 }
 $TagsStr = if ($Tags.Count -gt 0) { "`n  - " + ($Tags -join "`n  - ") } else { "" }
-$Content = @"
+if ($Content) {
+    $Content += "`n`n"
+}
+$Body = $Content + "
+"
+$FileContent = @"
 ---
 id: $Id
 title: $Title
@@ -36,6 +42,7 @@ tags:$TagsStr
 
 # $Title
 
+$Body
 "@
-$Content | Out-File -FilePath $Path -Encoding UTF8
+$FileContent | Out-File -FilePath $Path -Encoding UTF8
 Write-Output $Id

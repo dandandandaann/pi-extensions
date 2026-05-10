@@ -47,7 +47,7 @@ Use the `tasks` tool for all task management:
 | Action | Parameters | Description |
 |--------|------------|-------------|
 | `list` | — | Show all tasks across folders |
-| `create` | `title`, `priority` | Create new task in Backlog (workspace auto-detected) |
+| `create` | `title`, `priority`, `content` | Create new task in Backlog with optional initial content (workspace auto-detected) |
 | `move` | `name`, `folder` | Move task to Backlog/Active/Closed |
 | `append` | `uuid`, `content` or `file` | Add content to task |
 | `delete` | `name` | Delete a task |
@@ -61,8 +61,8 @@ Use the `tasks` tool for all task management:
 // List all tasks
 tasks(action="list")
 
-// Create a new task
-tasks(action="create", title="Implement authentication", priority="high")
+// Create a new task with initial content
+tasks(action="create", title="Implement authentication", priority="high", content="## Requirements\n- Design auth flow\n- Add OAuth support")
 
 // Move task to Active
 tasks(action="move", name="design-auth", folder="Active")
@@ -87,7 +87,7 @@ tasks(action="search", name="auth")
 | `/task <name>` | Assign task to Active (auto-switches) |
 | `/task-work <name>` | Assign task and instruct agent to work on it |
 | `/task-work all` | Process all Backlog tasks sequentially |
-| `/task-create <title> [--priority=high]` | Create new task in Backlog |
+| `/task-create <title> [--priority=high] [--content='...']` | Create new task in Backlog with optional content |
 | `/task-new <title> [--priority=high]` | Create new task in Backlog (alias) |
 | `/task-open <name>` | Open task file in default editor |
 | `/task-complete [name]` | Mark task as complete (lists tasks if no name given) |
@@ -95,8 +95,8 @@ tasks(action="search", name="auth")
 ### Command Examples
 
 ```bash
-# Create a high-priority task
-/task-create Implement authentication --priority=high
+# Create a high-priority task with initial content
+/task-create Implement authentication --priority=high --content='## Requirements\n- Design auth flow\n- Add OAuth support'
 
 # Assign existing task to active
 /task design-auth
