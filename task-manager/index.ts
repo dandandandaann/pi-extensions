@@ -275,7 +275,7 @@ async function findTask(workspace: string, name: string): Promise<TaskInfo | nul
  * Normalize a string for task matching: lowercase and replace any sequence of non-alphanumeric chars with single dash
  */
 function normalizeTaskName(name: string): string {
-    return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return name.toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -498,7 +498,7 @@ export default function (pi: ExtensionAPI) {
                                 details: { action: "get", found: false }
                             };
                         }
-                        const content = await getTaskContent(workspace, task.title);
+                        const content = await getTaskContent(workspace, task.filename);
                         return {
                             content: [{ type: "text", text: content || "Could not read task content" }],
                             details: { action: "get", found: true, task }
@@ -570,7 +570,7 @@ export default function (pi: ExtensionAPI) {
             for (const result of openTasks) {
                 for (const task of result.tasks) {
                     items.push({
-                        value: `${result.folder}:${task.title}`,
+                        value: `${task.filename}`,
                         label: `[${result.folder}] ${task.title} (${task.uuid.substring(0, 8)})`
                     });
                 }
@@ -590,13 +590,13 @@ export default function (pi: ExtensionAPI) {
             // Find selected task and output its content
             const selected = items.find(i => i.label === choice);
             if (selected) {
-                const taskName = selected.value.split(":")[1];
-                const content = await getTaskContent(workspace, taskName);
+                const taskFilename = selected.value;
+                const content = await getTaskContent(workspace, taskFilename);
                 if (content) {
                     // Display the task content as a notification
-                    ctx.ui.notify(`Task: ${taskName}\n\n${content}`, "info");
+                    ctx.ui.notify(`Task: ${taskFilename}\n\n${content}`, "info");
                 } else {
-                    ctx.ui.notify(`Could not read task "${taskName}"`, "error");
+                    ctx.ui.notify(`Could not read task "${taskFilename}"`, "error");
                 }
             }
         },
@@ -950,31 +950,31 @@ export default function (pi: ExtensionAPI) {
             const workspace = getWorkspaceName(ctx.cwd);
 
             // Check for "all" argument
-            if (args === "all") {
-                const backlogTasks = await listTasks(workspace, "Backlog");
+            if (args === "all") { // TODO: fix command
+                // const backlogTasks = await listTasks(workspace, "Backlog");
 
-                if (backlogTasks.length === 0) {
-                    ctx.ui.notify("No tasks in Backlog", "info");
-                    return;
-                }
+                // if (backlogTasks.length === 0) {
+                //     ctx.ui.notify("No tasks in Backlog", "info");
+                //     return;
+                // }
 
-                const confirmed = await ctx.ui.confirm(
-                    "Batch Mode",
-                    `Work on ${backlogTasks.length} task(s) from Backlog?`
-                );
+                // const confirmed = await ctx.ui.confirm(
+                //     "Batch Mode",
+                //     `Work on ${backlogTasks.length} task(s) from Backlog?`
+                // );
 
-                if (!confirmed) {
-                    ctx.ui.notify("Cancelled", "info");
-                    return;
-                }
+                // if (!confirmed) {
+                //     ctx.ui.notify("Cancelled", "info");
+                //     return;
+                // }
 
-                // Set batch state and start processing
-                batchMode = true;
-                batchTasks = backlogTasks;
-                batchIndex = 0;
+                // // Set batch state and start processing
+                // batchMode = true;
+                // batchTasks = backlogTasks;
+                // batchIndex = 0;
 
-                await processNextBatchTask(workspace, ctx);
-                return;
+                // await processNextBatchTask(workspace, ctx);
+                // return;
             }
 
             // If no args, check active tasks or show all tasks
@@ -1075,7 +1075,7 @@ export default function (pi: ExtensionAPI) {
         await runScript("move-task", workspace, { UUID: currentTask.uuid, NewFolder: "Active" });
 
         // Get task content
-        const content = await getTaskContent(workspace, currentTask.title);
+        const content = await getTaskContent(workspace, currentTask.filename);
         if (content) {
             const taskNum = batchIndex + 1;
             const totalTasks = batchTasks.length;
@@ -1131,7 +1131,7 @@ ${content}
         }
         await runScript("move-task", workspace, { UUID: uuid, NewFolder: "Active" });
 
-        const content = await getTaskContent(workspace, task.title);
+        const content = await getTaskContent(workspace, task.filename);
         if (content) {
             // Send task content with triggerTurn to start the agent
             const steerContent = `Work on the following task:
