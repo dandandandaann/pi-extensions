@@ -17,6 +17,7 @@ import { Type } from "typebox";
 import type { AgentConfig } from "./types/index.js";
 import { AgentStateManager, getAgentByIdOrName } from "./agents/index.js";
 import { DEFAULT_SETTINGS, type AgentSettings } from "./config/index.js";
+import { buildAgentListForTools } from "./prompts/index.js";
 import { registerAgentCommand, registerAgentsCommand, registerCallCommand, registerNCommand } from "./commands/index.js";
 import { runSync, formatSpawnResult } from "./spawn/index.js";
 import type { SpawnResult } from "./types/index.js";
@@ -200,7 +201,9 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "call",
 		label: "Call Agent",
-		description: "Delegate a task to another agent. Use this when you need specialized help or want to offload work.",
+		description: `Delegate a task to another agent. Use this when you need specialized help or want to offload work.
+
+${buildAgentListForTools(agents)}`,
 		promptSnippet: "Delegate tasks to specialized agents",
 		promptGuidelines: [
 			"Use call when the user asks for help that would benefit from a specialized agent.",

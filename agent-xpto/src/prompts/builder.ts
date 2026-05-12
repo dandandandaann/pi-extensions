@@ -37,6 +37,23 @@ export function buildRestrictionList(agent: AgentConfig): string {
 }
 
 /**
+ * Build a list of all available agents for tool descriptions
+ */
+export function buildAgentListForTools(agents: AgentConfig[]): string {
+	if (agents.length === 0) {
+		return "No agents configured.";
+	}
+
+	const lines = ["Available Agents:"];
+	for (const agent of agents) {
+		const purpose = agent.purpose || "General purpose agent";
+		lines.push(`- ${agent.id}: ${purpose}`);
+	}
+
+	return lines.join("\n");
+}
+
+/**
  * Build the full agent system prompt with header
  */
 export function buildAgentSystemPrompt(agent: AgentConfig): string {
