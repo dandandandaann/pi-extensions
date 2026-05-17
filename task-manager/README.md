@@ -1,18 +1,18 @@
 # Task Manager Extension
 
-Manages project tasks via MD files with PowerShell CRUD scripts.
+Manages project tasks via Markdown files. Cross-platform: works on Windows, macOS, and Linux.
 
 ## Folder Structure
 
-Tasks are separated by workspace/folder. Tasks for `C:/temp` go to:
+Tasks are separated by workspace/folder. Tasks for `/home/user/projects/myapp` go to:
 
 ```
 ~/.pi/tasks/
-├── C-temp/           # Workspace: C:/temp
-│   ├── Backlog/      # Pending tasks
-│   ├── Active/       # Currently working on (single task)
-│   ├── user-qa/
-│   └── Closed/       # Completed tasks
+├── home-user-projects-myapp/   # Workspace derived from cwd
+│   ├── Backlog/                # Pending tasks
+│   ├── Active/                 # Currently working on (single task)
+│   ├── user-qa/                # Completed tasks pending user QA
+│   └── Closed/                 # Completed tasks
 ├── Another-Workspace/
 │   ├── Backlog/
 │   ├── Active/
@@ -46,32 +46,37 @@ tags:
 |---------|-------------|
 | `/tasks` | List all tasks by folder |
 | `/task <name>` | Assign a task to Active |
-| `/task-new <title> [--priority=high]` | Create new task in Backlog |
+| `/task-create <title> [--priority=high] [--content='...']` | Create new task in Backlog |
+| `/task-new <title> [--priority=high]` | Create new task (alias) |
 | `/task-open <name>` | Open a task file in the default editor |
-| `/task-complete <name>` | Mark task as complete (moves to user-qa) |
+| `/task-complete <name>` | Mark task as complete (moves to Closed) |
+| `/task-work <name>` | Assign task and instruct agent to work on it |
+| `/submit-qa <message>` | Submit active task to QA |
 
 ## Tools (for LLM)
 
-| Action | Description |
-|--------|-------------|
-| `list` | Show all tasks |
-| `move` | Move task to folder |
-| `append` | Add content to task |
-| `delete` | Delete a task |
-| `rename` | Rename a task |
-| `search` | Find task by name |
-| `get` | Get full task content |
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `list` | — | Show all tasks |
+| `create` | `title`, `priority`, `content` | Create new task in Backlog |
+| `get` | `uuid` or `id` | Get full task content |
+| `move` | `uuid`, `folder` | Move task to folder |
+| `append` | `uuid`, `content` or `file` | Add content to task |
+| `delete` | `uuid` | Delete a task |
+| `rename` | `uuid`, `newTitle` | Rename a task |
+| `search` | `name` | Find task by name |
+| `submit-qa` | `message` | Submit active task to QA |
 
 ## Usage Examples
 
 ```bash
 # Create a task
-/task-new Design authentication flow --priority=high
+/task-create Implement authentication --priority=high
 
 # List all tasks
 /tasks
 
-# Mark task as complete (moves to user-qa)
+# Mark task as complete
 /task-complete design-auth
 
 # Assign a task
@@ -79,17 +84,6 @@ tags:
 
 # Agent tool usage
 tasks(action="list")
-tasks(action="move", name="design-auth", folder="Active")
-tasks(action="append", name="design-auth", content="## Progress\n- Set up OAuth providers")
+tasks(action="move", uuid="abc123...", folder="Active")
+tasks(action="append", uuid="abc123...", content="## Progress\n- Set up OAuth providers")
 ```
-
-## Direct PS1 Scripts
-
-Scripts are in `scripts/` folder for direct access if needed:
-
-- `list-tasks.ps1 -Folder <Backlog|Active|Closed>`
-- `create-task.ps1 -Title <name> -Priority <level>`
-- `move-task.ps1 -Name <name> -NewFolder <folder>`
-- `append-task.ps1 -Name <name> -Content <text>`
-- `delete-task.ps1 -Name <name>`
-- `rename-task.ps1 -Name <name> -NewTitle <title>`

@@ -1,7 +1,8 @@
 /**
  * Task Manager Extension for Pi
  * 
- * Manages tasks via PowerShell scripts that operate on MD files.
+ * Manages tasks via Markdown files with native Node.js file operations.
+ * Cross-platform: works on Windows, macOS, and Linux.
  * - Blocks direct access to ~/.pi/tasks/ folder
  * - Provides CRUD tools and commands for task management
  * - Enforces single-active task policy with user confirmation
@@ -10,12 +11,14 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
+import { resolve, join, basename } from "node:path";
+import { readdir, readFile, writeFile, appendFile, mkdir, rename, unlink, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
 import { Text } from "@mariozechner/pi-tui";
 
-const VERSION = "0.1.3";
+const VERSION = "0.2.0";
 const execAsync = promisify(exec);
 const TASKS_ROOT = resolve(process.env.HOME || process.env.USERPROFILE || "", ".pi", "tasks");
 
@@ -96,32 +99,105 @@ type TasksParams = Static<typeof TasksParamsSchema>;
 
 
 
+const FOLDERS = ["Backlog", "Active", "user-qa", "Closed"] as const;
+
 /**
- * Parse PowerShell output into structured task data
+ * Ensure a directory exists, creating it recursively if needed
+ */
+async function ensureDir(dirPath: string): Promise<void> {
+    await mkdir(dirPath, { recursive: true });
+}
+
+/**
+ * Parse YAML frontmatter from a markdown file's content.
+ * Returns an object with id, title, priority, created fields.
+ */
+function parseFrontmatter(content: string): { id: string; title: string; priority: string; created: string } {
+    const result = { id: "", title: "Untitled", priority: "medium", created: "" };
+    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!match) return result;
+    const fm = match[1];
+    const titleMatch = fm.match(/title:\s*(.+)/);
+    if (titleMatch) result.title = titleMatch[1].trim();
+    const priorityMatch = fm.match(/priority:\s*(.+)/);
+    if (priorityMatch) result.priority = priorityMatch[1].trim();
+    const createdMatch = fm.match(/created:\s*(.+)/);
+    if (createdMatch) result.created = createdMatch[1].trim();
+    const idMatch = fm.match(/id:\s*(.+)/);
+    if (idMatch) result.id = idMatch[1].trim();
+    return result;
+}
+
+/**
+ * Find a task file by UUID across all folders.
+ * Returns the full file path and the folder it was found in, or null.
+ */
+async function findTaskFileByUUID(workspace: string, uuid: string): Promise<{ filePath: string; folder: string } | null> {
+    for (const folder of FOLDERS) {
+        const dir = resolve(TASKS_ROOT, workspace, folder);
+        let files: string[];
+        try {
+            files = await readdir(dir);
+        } catch {
+            continue;
+        }
+        for (const file of files) {
+            if (!file.endsWith(".md")) continue;
+            const filePath = resolve(dir, file);
+            try {
+                const content = await readFile(filePath, "utf8");
+                const fm = parseFrontmatter(content);
+                if (fm.id === uuid || fm.id.startsWith(uuid)) {
+                    return { filePath, folder };
+                }
+            } catch {
+                continue;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * List all tasks in a given folder for a workspace (native fs implementation)
  */
 async function listTasks(workspace: string, folder: string): Promise<TaskInfo[]> {
-    const scriptPath = resolve(__dirname, "scripts", "list-tasks.ps1");
-    const { stdout } = await execAsync(
-        `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -Workspace "${workspace}" -Folder "${folder}"`,
-        { encoding: "utf8" }
-    );
+    const dir = resolve(TASKS_ROOT, workspace, folder);
+    let files: string[];
+    try {
+        files = await readdir(dir);
+    } catch {
+        return [];
+    }
 
-    if (!stdout.trim()) return [];
-
-    return stdout.trim().split("\n")
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map(line => {
-            const [filename, title, priority, created, uuid] = line.split("\t");
-            return { filename: filename || "", title: title || "Untitled", priority: priority || "medium", created: created || "", uuid: uuid || "", folder };
-        });
+    const tasks: TaskInfo[] = [];
+    for (const file of files) {
+        if (!file.endsWith(".md")) continue;
+        const filePath = resolve(dir, file);
+        try {
+            const content = await readFile(filePath, "utf8");
+            const fm = parseFrontmatter(content);
+            const baseName = file.replace(/\.md$/, "");
+            tasks.push({
+                filename: baseName,
+                title: fm.title,
+                priority: fm.priority,
+                created: fm.created,
+                uuid: fm.id,
+                folder,
+            });
+        } catch {
+            continue;
+        }
+    }
+    return tasks;
 }
 
 /**
  * Get all tasks across folders for a workspace
  */
 async function getAllTasks(workspace: string): Promise<ListResult[]> {
-    return Promise.all(["Backlog", "Active", "user-qa", "Closed"].map(async folder => ({
+    return Promise.all(FOLDERS.map(async folder => ({
         folder,
         tasks: await listTasks(workspace, folder)
     })));
@@ -170,12 +246,8 @@ async function findExactMatchTask(workspace: string, name: string): Promise<Task
  * Get full task file content by scanning the directory
  */
 async function getTaskContent(workspace: string, name: string): Promise<string | null> {
-    // Build list of folders to search
-    for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
+    for (const folder of FOLDERS) {
         const folderPath = resolve(TASKS_ROOT, workspace, folder);
-
-        // List files in the folder
-        const { readdir } = await import("node:fs/promises");
         let files: string[];
         try {
             files = await readdir(folderPath);
@@ -183,17 +255,13 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
             continue;
         }
 
-        // Find matching file
         const normalizedName = normalizeTaskName(name);
         for (const file of files) {
             if (!file.endsWith(".md")) continue;
-
-            // Check if filename starts with the normalized task name
             const fileNameLower = file.toLowerCase();
             if (fileNameLower.startsWith(normalizedName) || fileNameLower.includes(normalizedName)) {
                 const filePath = resolve(folderPath, file);
                 try {
-                    const { readFile } = await import("node:fs/promises");
                     return await readFile(filePath, "utf8");
                 } catch {
                     continue;
@@ -205,42 +273,130 @@ async function getTaskContent(workspace: string, name: string): Promise<string |
 }
 
 /**
- * Run a PowerShell script with the given arguments
- * Uses -Command with call operator (&) to properly handle arguments with spaces
- * Content arguments are base64 encoded to avoid escaping issues
- * Switch parameters are passed as -Param (without value) when true
+ * Create a new task file. Returns the generated UUID.
  */
-async function runScript(script: string, workspace: string, args: Record<string, string | boolean | undefined>): Promise<string> {
-    const scriptPath = resolve(__dirname, "scripts", `${script}.ps1`);
+async function createTask(workspace: string, title: string, priority: string = "medium", content?: string): Promise<string> {
+    const folderPath = resolve(TASKS_ROOT, workspace, "Backlog");
+    await ensureDir(folderPath);
 
-    const cmdParts: string[] = [];
+    const id = randomUUID();
+    const created = new Date().toISOString().slice(0, 10);
+    const safeName = title.replace(/[^\w\-]/g, "-").replace(/-+/g, "-");
+    let fileName = `${safeName}.md`;
+    let filePath = resolve(folderPath, fileName);
 
-    // Add workspace
-    cmdParts.push(`-Workspace ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${Buffer.from(workspace, "utf16le").toString("base64")}')))`);
-
-    // Add other args
-    for (const [k, v] of Object.entries(args)) {
-        if (v === undefined) continue;
-
-        if (typeof v === "boolean" && v) {
-            // Switch parameter - just add the flag
-            cmdParts.push(`-${k}`);
-        } else if (typeof v === "string") {
-            // String parameter - base64 encode
-            const encoded = Buffer.from(v, "utf16le").toString("base64");
-            cmdParts.push(`-${k} ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${encoded}')))`);
+    // Handle name collisions
+    let i = 1;
+    try {
+        while (await stat(filePath)) {
+            fileName = `${safeName}-${i}.md`;
+            filePath = resolve(folderPath, fileName);
+            i++;
         }
+    } catch {
+        // File doesn't exist, which is what we want
     }
 
-    // Use call operator (&) with -Command for proper argument handling
-    const cmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${scriptPath.replace(/'/g, "''")}' ${cmdParts.join(' ')}"`;
+    const body = content ? `${content}\n\n` : "";
+    const fileContent = `---\nid: ${id}\ntitle: ${title}\ncreated: ${created}\npriority: ${priority}\ntags:\n---\n\n# ${title}\n\n${body}`;
+    await writeFile(filePath, fileContent, "utf8");
+    return id;
+}
 
-    const { stdout, stderr } = await execAsync(cmd, { encoding: "utf8" });
-
-    if (stderr && !stdout) {
-        throw new Error(stderr);
+/**
+ * Move a task to a different folder by UUID.
+ * Returns "oldFolder\tnewFolder".
+ */
+async function moveTask(workspace: string, uuid: string, newFolder: string, allowClosed: boolean = false): Promise<string> {
+    if (newFolder === "Closed" && !allowClosed) {
+        throw new Error("Use submit-qa to move the task to user-qa instead of directly moving it to Closed.");
     }
-    return stdout.trim();
+
+    const found = await findTaskFileByUUID(workspace, uuid);
+    if (!found) {
+        throw new Error(`Task with UUID '${uuid}' not found`);
+    }
+
+    const newDir = resolve(TASKS_ROOT, workspace, newFolder);
+    await ensureDir(newDir);
+
+    const fileName = basename(found.filePath);
+    const newPath = resolve(newDir, fileName);
+    await rename(found.filePath, newPath);
+    return `${found.folder}\t${newFolder}`;
+}
+
+/**
+ * Append content to a task by UUID.
+ */
+async function appendToTask(workspace: string, uuid: string, content?: string, fileSrc?: string): Promise<string> {
+    const found = await findTaskFileByUUID(workspace, uuid);
+    if (!found) {
+        throw new Error(`Task with UUID '${uuid}' not found`);
+    }
+
+    let appendContent = content;
+    if (fileSrc) {
+        appendContent = await readFile(fileSrc, "utf8");
+    }
+
+    if (!appendContent) {
+        throw new Error("Either content or file parameter is required");
+    }
+
+    const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
+    const toAppend = `\n----\n${timestamp}\n${appendContent}`;
+    await appendFile(found.filePath, toAppend, "utf8");
+
+    return await readFile(found.filePath, "utf8");
+}
+
+/**
+ * Delete a task by UUID. Returns the folder it was in.
+ */
+async function deleteTask(workspace: string, uuid: string): Promise<string> {
+    const found = await findTaskFileByUUID(workspace, uuid);
+    if (!found) {
+        throw new Error(`Task with UUID '${uuid}' not found`);
+    }
+    await unlink(found.filePath);
+    return found.folder;
+}
+
+/**
+ * Rename a task by UUID. Updates the title in frontmatter. Returns the folder.
+ */
+async function renameTaskFile(workspace: string, uuid: string, newTitle: string): Promise<string> {
+    const found = await findTaskFileByUUID(workspace, uuid);
+    if (!found) {
+        throw new Error(`Task with UUID '${uuid}' not found`);
+    }
+
+    let content = await readFile(found.filePath, "utf8");
+    content = content.replace(/^(title:).+/m, `$1 ${newTitle}`);
+    await writeFile(found.filePath, content, "utf8");
+    return found.folder;
+}
+
+/**
+ * Submit a task to QA: append a QA note and move to user-qa folder.
+ */
+async function submitTaskToQa(workspace: string, uuid: string, context: string): Promise<string> {
+    const found = await findTaskFileByUUID(workspace, uuid);
+    if (!found) {
+        throw new Error(`Task with UUID '${uuid}' not found`);
+    }
+
+    const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
+    const qaNote = `\n----\n${timestamp}\n## Submitted to QA\n${context}`;
+    await appendFile(found.filePath, qaNote, "utf8");
+
+    const newDir = resolve(TASKS_ROOT, workspace, "user-qa");
+    await ensureDir(newDir);
+    const fileName = basename(found.filePath);
+    const newPath = resolve(newDir, fileName);
+    await rename(found.filePath, newPath);
+    return "Moved to user-qa";
 }
 
 /**
@@ -358,7 +514,7 @@ export default function (pi: ExtensionAPI) {
                             };
                         }
                         const priority = p.priority || "medium";
-                        const id = await runScript("create-task", workspace, { Title: p.title, Priority: priority, Content: p.content });
+                        const id = await createTask(workspace, p.title, priority, p.content);
                         return {
                             content: [{ type: "text", text: `Created task "${p.title}" [${priority}] (${id.substring(0, 8)})` }],
                             details: { action: "create", id, title: p.title, priority, workspace }
@@ -406,11 +562,11 @@ export default function (pi: ExtensionAPI) {
                                     };
                                 }
                                 // Move current active to backlog first
-                                await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
+                                await moveTask(workspace, activeTasks[0].uuid, "Backlog");
                             }
                         }
 
-                        const result = await runScript("move-task", workspace, { UUID: taskId, NewFolder: p.folder });
+                        const result = await moveTask(workspace, taskId!, p.folder);
                         return {
                             content: [{ type: "text", text: `Moved task to ${p.folder}` }],
                             details: { action: "move", result }
@@ -425,7 +581,7 @@ export default function (pi: ExtensionAPI) {
                             };
                         }
                         var taskId = p.uuid || p.id;
-                        await runScript("append-task", workspace, { UUID: taskId, Content: p.content, File: p.file });
+                        await appendToTask(workspace, taskId!, p.content, p.file);
                         return {
                             content: [{ type: "text", text: `Added content to task` }],
                             details: { action: "append" }
@@ -440,7 +596,7 @@ export default function (pi: ExtensionAPI) {
                             };
                         }
                         var taskId = p.uuid || p.id;
-                        const folder = await runScript("delete-task", workspace, { UUID: taskId });
+                        const folder = await deleteTask(workspace, taskId!);
                         return {
                             content: [{ type: "text", text: `Deleted task from ${folder}` }],
                             details: { action: "delete", folder }
@@ -455,7 +611,7 @@ export default function (pi: ExtensionAPI) {
                             };
                         }
                         var taskId = p.uuid || p.id;
-                        const folder = await runScript("rename-task", workspace, { UUID: taskId, NewTitle: p.newTitle });
+                        const folder = await renameTaskFile(workspace, taskId!, p.newTitle!);
                         return {
                             content: [{ type: "text", text: `Renamed to "${p.newTitle}" (${folder})` }],
                             details: { action: "rename", folder }
@@ -520,7 +676,7 @@ export default function (pi: ExtensionAPI) {
                             };
                         }
                         const taskUUID = activeTasks[0].uuid;
-                        const result = await runScript("submit-to-qa", workspace, { UUID: taskUUID, Context: p.message || "" });
+                        const result = await submitTaskToQa(workspace, taskUUID, p.message || "");
                         return {
                             content: [{ type: "text", text: `Submitted task to QA: ${p.message || ""}` }],
                             details: { action: "submit-qa", uuid: taskUUID, result }
@@ -631,9 +787,9 @@ export default function (pi: ExtensionAPI) {
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length > 0 && activeTasks[0].uuid !== taskUUID) {
-                    await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
+                    await moveTask(workspace, activeTasks[0].uuid, "Backlog");
                 }
-                await runScript("move-task", workspace, { UUID: taskUUID, NewFolder: "Active" });
+                await moveTask(workspace, taskUUID, "Active");
                 ctx.ui.notify(`Now active: "${title}"`, "info");
                 return;
             }
@@ -666,9 +822,9 @@ export default function (pi: ExtensionAPI) {
                 // Auto-switch active task
                 const activeTasks = await listTasks(workspace, "Active");
                 if (activeTasks.length > 0 && activeTasks[0].uuid !== taskUUID) {
-                    await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
+                    await moveTask(workspace, activeTasks[0].uuid, "Backlog");
                 }
-                await runScript("move-task", workspace, { UUID: taskUUID, NewFolder: "Active" });
+                await moveTask(workspace, taskUUID, "Active");
                 ctx.ui.notify(`Now active: "${task?.title}"`, "info");
             }
         },
@@ -676,39 +832,14 @@ export default function (pi: ExtensionAPI) {
 
     // Helper to find task file path by title or UUID
     async function findTaskPath(workspace: string, nameOrUUID: string): Promise<string | null> {
-        // First try to find by UUID in frontmatter
-        for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
-            const folderPath = resolve(TASKS_ROOT, workspace, folder);
-            const { readdir } = await import("node:fs/promises");
-
-            let files: string[];
-            try {
-                files = await readdir(folderPath);
-            } catch {
-                continue;
-            }
-
-            for (const file of files) {
-                if (!file.endsWith(".md")) continue;
-                const filePath = resolve(folderPath, file);
-                try {
-                    const { readFile } = await import("node:fs/promises");
-                    const content = await readFile(filePath, "utf8");
-                    if (content.match(new RegExp(`id:\\s*${nameOrUUID}`))) {
-                        return filePath;
-                    }
-                } catch {
-                    continue;
-                }
-            }
-        }
+        // First try to find by UUID using shared helper
+        const found = await findTaskFileByUUID(workspace, nameOrUUID);
+        if (found) return found.filePath;
 
         // Fallback: try to find by normalized title in filename
         const normalizedName = normalizeTaskName(nameOrUUID);
-        for (const folder of ["Backlog", "Active", "user-qa", "Closed"]) {
+        for (const folder of FOLDERS) {
             const folderPath = resolve(TASKS_ROOT, workspace, folder);
-            const { readdir } = await import("node:fs/promises");
-
             let files: string[];
             try {
                 files = await readdir(folderPath);
@@ -741,8 +872,10 @@ export default function (pi: ExtensionAPI) {
 
     async function openTaskFileInEditor(filePath: string, title: string, ctx: any) {
         try {
-            const isWindows = process.platform === "win32";
-            const cmd = isWindows ? `start "" "${filePath}"` : `open "${filePath}"`;
+            const platform = process.platform;
+            const cmd = platform === "win32" ? `start "" "${filePath}"`
+                : platform === "darwin" ? `open "${filePath}"`
+                : `xdg-open "${filePath}"`;
             await execAsync(cmd);
             ctx.ui.notify(`Opened "${title}" in editor`, "info");
         } catch (error) {
@@ -885,7 +1018,7 @@ export default function (pi: ExtensionAPI) {
                 title = title.replace(/--content='[^']*'\s*/, "");
             }
 
-            const id = await runScript("create-task", workspace, { Title: title, Priority: priority, Content: content });
+            const id = await createTask(workspace, title, priority, content);
             ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "info");
 
             // Open task after creation if -o flag was set
@@ -927,7 +1060,7 @@ export default function (pi: ExtensionAPI) {
                 title = remaining.replace(/--priority=\w+\s*/, "");
             }
 
-            const id = await runScript("create-task", workspace, { Title: title, Priority: priority });
+            const id = await createTask(workspace, title, priority);
             ctx.ui.notify(`Created task "${title}" (${id.substring(0, 8)})`, "info");
 
             // Open task after creation if -o flag was set
@@ -1068,11 +1201,11 @@ export default function (pi: ExtensionAPI) {
         // Move any existing Active to Backlog
         const activeTasks = await listTasks(workspace, "Active");
         if (activeTasks.length > 0) {
-            await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
+            await moveTask(workspace, activeTasks[0].uuid, "Backlog");
         }
 
         // Move current batch task to Active
-        await runScript("move-task", workspace, { UUID: currentTask.uuid, NewFolder: "Active" });
+        await moveTask(workspace, currentTask.uuid, "Active");
 
         // Get task content
         const content = await getTaskContent(workspace, currentTask.filename);
@@ -1127,9 +1260,9 @@ ${content}
 
         const activeTasks = await listTasks(workspace, "Active");
         if (activeTasks.length > 0 && activeTasks[0].uuid !== uuid) {
-            await runScript("move-task", workspace, { UUID: activeTasks[0].uuid, NewFolder: "Backlog" });
+            await moveTask(workspace, activeTasks[0].uuid, "Backlog");
         }
-        await runScript("move-task", workspace, { UUID: uuid, NewFolder: "Active" });
+        await moveTask(workspace, uuid, "Active");
 
         const content = await getTaskContent(workspace, task.filename);
         if (content) {
@@ -1175,13 +1308,13 @@ ${content}
             const taskTitle = activeTasks[0].title;
 
             // Move to user-qa folder
-            await runScript("move-task", workspace, { UUID: taskUUID, NewFolder: "user-qa" });
+            await moveTask(workspace, taskUUID, "user-qa");
 
             // Append QA submission note
             const qaNote = args
                 ? `\n## QA Submission\n${args}\n`
                 : `\n## QA Submission\nSubmitted to QA.\n`;
-            await runScript("append-task", workspace, { UUID: taskUUID, Content: qaNote });
+            await appendToTask(workspace, taskUUID, qaNote);
 
             ctx.ui.notify(`Submitted "${taskTitle}" to QA`, "info");
 
@@ -1288,11 +1421,11 @@ ${content}
         const title = task.title;
 
         // Move to Closed folder (with AllowClosed flag)
-        await runScript("move-task", workspace, { UUID: uuid, NewFolder: "Closed", AllowClosed: true });
+        await moveTask(workspace, uuid, "Closed", true);
 
         // Append completion note
         const qaNote = `\n## Completed\nTask marked as complete.`;
-        await runScript("append-task", workspace, { UUID: uuid, Content: qaNote });
+        await appendToTask(workspace, uuid, qaNote);
 
         ctx.ui.notify(`Moved "${title}" to Closed`, "info");
     }

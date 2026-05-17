@@ -1,6 +1,6 @@
 # AGENTS.md — Task Manager Extension
 
-This extension manages project tasks via Markdown files with PowerShell CRUD scripts.
+This extension manages project tasks via Markdown files. Cross-platform (Windows, macOS, Linux).
 
 ## Overview
 
@@ -123,7 +123,6 @@ The extension **blocks direct access** to `~/.pi/tasks/` via write/edit/bash too
 
 1. The `tasks` tool
 2. The `/task`, `/tasks`, `/task-new`, `/task-complete` commands
-3. Direct PowerShell scripts (for advanced use)
 
 ### Active Task Policy
 
@@ -131,29 +130,7 @@ The extension **blocks direct access** to `~/.pi/tasks/` via write/edit/bash too
 - Moving a new task to Active auto-moves the current one to Backlog
 - Use `/task <name>` to switch active tasks
 
-## Direct PowerShell Scripts
 
-For automation, scripts are in `scripts/` folder:
-
-```powershell
-# List tasks in a folder
-./scripts/list-tasks.ps1 -Workspace "C-repo" -Folder "Backlog"
-
-# Create a task
-./scripts/create-task.ps1 -Workspace "C-repo" -Title "My Task" -Priority "high"
-
-# Move a task
-./scripts/move-task.ps1 -Workspace "C-repo" -Name "my-task" -NewFolder "Active"
-
-# Append content
-./scripts/append-task.ps1 -Workspace "C-repo" -Name "my-task" -Content "## Progress"
-
-# Delete a task
-./scripts/delete-task.ps1 -Workspace "C-repo" -Name "my-task"
-
-# Rename a task
-./scripts/rename-task.ps1 -Workspace "C-repo" -Name "my-task" -NewTitle "New Title"
-```
 
 ## Priority Levels
 
