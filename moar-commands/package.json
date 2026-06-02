@@ -1,0 +1,17 @@
+{
+  "name": "moar-commands",
+  "version": "0.1.0",
+  "description": "Additional commands for pi coding agent",
+  "main": "./index.ts",
+  "scripts": {
+    "build": "echo 'Extension built. Ask user to /reload'"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "keywords": ["pi", "extension", "commands"],
+  "license": "MIT",
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.1.0"
+  }
+}
