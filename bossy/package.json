@@ -1,0 +1,15 @@
+{
+  "name": "bossy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An adversarial boss extension for pi",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "keywords": ["pi-extension", "boss", "productivity"]
+}
