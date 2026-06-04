@@ -17,6 +17,7 @@ export interface ParsedMarkdownAgent {
 	tools: Record<string, boolean>;
 	model?: { provider: string; model: string };
 	thinkingLevel?: string;
+	temperature?: number;
 }
 
 /**
@@ -124,11 +125,18 @@ export function parseMarkdownAgent(content: string, fileName: string): ParsedMar
 			tools,
 			model,
 			thinkingLevel: metadata.thinking ? String(metadata.thinking) : undefined,
+			temperature: extractTemperature(metadata.temperature),
 		};
 	} catch (error) {
 		console.error("[agents/parser] Failed to parse agent:", fileName, error);
 		return null;
 	}
+}
+
+function extractTemperature(value: unknown): number | undefined {
+	if (value === undefined || value === null) return undefined;
+	const parsed = parseFloat(String(value));
+	return isNaN(parsed) ? undefined : parsed;
 }
 
 /**
@@ -144,5 +152,6 @@ export function convertParsedToAgentConfig(parsed: ParsedMarkdownAgent): AgentCo
 		tools: parsed.tools,
 		model: parsed.model,
 		thinkingLevel: parsed.thinkingLevel as AgentConfig["thinkingLevel"],
+		temperature: parsed.temperature,
 	};
 }

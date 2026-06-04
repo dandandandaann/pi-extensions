@@ -4,7 +4,7 @@
 
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "../types";
-import { getAgentByIdOrName } from "../agents";
+import { getAgentByIdOrName, setAgentTemperature } from "../agents";
 import { getEnabledToolNames } from "../tools";
 
 /**
@@ -41,6 +41,8 @@ export function applyAgentConfig(
 		ctx.ui.setStatus("agent-xpto", `Agent: ${agent.name}`);
 	}
 	ctx.ui.notify(`Switched to ${agent.name}`, "info");
+
+	setAgentTemperature(agent.temperature);
 
 	if (agent.model) {
 		const model = ctx.modelRegistry.find(agent.model.provider, agent.model.model);

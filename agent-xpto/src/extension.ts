@@ -15,7 +15,7 @@ import { Key } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
 import type { AgentConfig } from "./types/index.js";
-import { AgentStateManager, getAgentByIdOrName } from "./agents/index.js";
+import { AgentStateManager, getAgentByIdOrName, setAgentTemperature, getAgentTemperature } from "./agents/index.js";
 import { DEFAULT_SETTINGS, type AgentSettings } from "./config/index.js";
 import { buildAgentListForTools } from "./prompts/index.js";
 import { registerAgentCommand, registerAgentsCommand, registerCallCommand, registerNCommand } from "./commands/index.js";
@@ -31,6 +31,8 @@ function applyAgentConfig(
 	ctx: ExtensionContext,
 	settings: AgentSettings
 ): void {
+	setAgentTemperature(agent.temperature);
+
 	if (settings.showInStatusBar) {
 		ctx.ui.setStatus("agent-xpto", `Agent: ${agent.name}`);
 	}
@@ -58,6 +60,8 @@ function cycleToNextAgent(
 ): AgentConfig | null {
 	const nextAgent = state.cycleAgent();
 	if (nextAgent) {
+		setAgentTemperature(nextAgent.temperature);
+
 		if (settings.showInStatusBar) {
 			ctx.ui.setStatus("agent-xpto", `Agent: ${nextAgent.name}`);
 		}
@@ -124,6 +128,9 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 			if (targetAgent) {
 				state.switchToAgent(agent.id);
 			}
+
+			// Set temperature for initial agent
+			setAgentTemperature(agent.temperature);
 		}
 
 		// Set model if configured
@@ -189,9 +196,17 @@ export function createAgentSelectorExtension(pi: ExtensionAPI): void {
 
 	// Cleanup on shutdown
 	pi.on("session_shutdown", async (_event: unknown, ctx: ExtensionContext) => {
+		setAgentTemperature(undefined);
 		if (settings.showInStatusBar) {
 			ctx.ui.setStatus("agent-xpto", undefined);
 		}
+	});
+
+	// Temperature handler - applies temperature to LLM requests
+	pi.on("before_provider_request", (event) => {
+		const temperature = getAgentTemperature();
+		if (temperature === undefined) return undefined;
+		return { ...event.payload, temperature };
 	});
 
 	// ============================================================================

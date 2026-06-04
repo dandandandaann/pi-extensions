@@ -40,4 +40,5 @@ export interface AgentConfig {
 	tools: AgentTools;
 	model?: ModelConfig;
 	thinkingLevel?: ThinkingLevel;
+	temperature?: number;
 }
