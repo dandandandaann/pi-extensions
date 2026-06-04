@@ -13,7 +13,7 @@ const DEFAULT_CONFIG: BossConfig = {
   idleThresholdMs: 30 * 60 * 1000,   // 30 minutes
   followupIntervalMs: 10 * 60 * 1000, // 10 minutes
   maxFollowups: 3,
-  bossEnabled: true,
+  bossEnabled: false,
   escalationStyle: "adversarial",
 };
 

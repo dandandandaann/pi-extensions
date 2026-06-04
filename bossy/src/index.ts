@@ -90,7 +90,10 @@ export default (pi: ExtensionAPI): void => {
     });
 
     currentIdleWatcher = watcher;
+    // Only start the watcher if boss is enabled (starts OFF by default)
+  if (bossEnabled) {
     watcher.start();
+  }
 
     // Set up UI only when available
     if (ctx.hasUI) {

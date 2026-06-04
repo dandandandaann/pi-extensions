@@ -42,8 +42,11 @@ export class IdleWatcher {
     }
   }
 
-  /** Force a check-in immediately (as followup #1). */
+  /** Force a check-in immediately (as followup #1). Auto-starts watcher if stopped. */
   forceCheckIn(): void {
+    // Auto-start if watcher was stopped (boss may be re-enabling)
+    this.start();
+
     // Increment the follow-up counter (like fireCheckIn does)
     this.followupsSentInPeriod += 1;
 
