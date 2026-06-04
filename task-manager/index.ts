@@ -114,7 +114,9 @@ async function ensureDir(dirPath: string): Promise<void> {
  */
 function parseFrontmatter(content: string): { id: string; title: string; priority: string; created: string } {
     const result = { id: "", title: "Untitled", priority: "medium", created: "" };
-    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    // Remove UTF-8 BOM if present (some older files have it)
+    const cleanContent = content.replace(/^\uFEFF/, '');
+    const match = cleanContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (!match) return result;
     const fm = match[1];
     const titleMatch = fm.match(/title:\s*(.+)/);
