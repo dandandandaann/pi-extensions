@@ -50,18 +50,18 @@ export function setupStatusLine(
     // boss-state
     let bossState: string;
     if (!config.bossEnabled) {
-      bossState = "Bossy: disabled";
+      bossState = "";
     } else {
       const idle = formatIdleDuration(idleWatcher.getLastActivityAt());
       if (openTasks.length === 0) {
-        bossState = "Bossy: idle · no open tasks";
+        bossState = " | Bossy: idle · no open tasks";
       } else {
         // next check-in time
         const nextCheckIn = formatTimeUntil(idleWatcher.getNextCheckInAt());
-        bossState = `Bossy: ${openTasks.length} open · idle ${idle} · next in ${nextCheckIn}`;
+        bossState = ` | Bossy: ${openTasks.length} open · idle ${idle} · next in ${nextCheckIn}`;
       }
     }
-    ctx.ui.setStatus("boss-state", ` | ${bossState}`);
+    ctx.ui.setStatus("boss-state", bossState);
 
     // boss-task — oldest open task
     const oldest = getOldestOpenTask(ctx);
